@@ -1,3 +1,4 @@
+import uuid
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
@@ -6,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from database.models import User
-from keyboards.inline import main_menu # Импорт с подчеркиванием
+from keyboards.inline import main_menu 
 from config import TEXTS
 
 router = Router(name="start_router")
@@ -15,7 +16,7 @@ router = Router(name="start_router")
 async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
     await state.clear()
     
-    # Реферальная система
+    # Реферальная система: достаем ID пригласившего из ссылки
     args = message.text.split()
     referrer_id = None
     if len(args) > 1 and args[1].isdigit():
@@ -23,31 +24,36 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
         if referrer_id == message.from_user.id:
             referrer_id = None
 
-    # Проверка/создание юзера
+    # Проверка, есть ли уже такой пользователь в базе
     result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
     user = result.scalar_one_or_none()
     
     if not user:
+        # Создаем нового пользователя с генерацией обязательного referral_code
         user = User(
             telegram_id=message.from_user.id,
             username=message.from_user.username,
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
-            referrer_id=referrer_id
+            referrer_id=referrer_id,
+            referral_code=str(uuid.uuid4())[:8] # Генерация уникального короткого кода
         )
         session.add(user)
-        await session.commit()
-        
-        # Начисление бонуса рефереру (если есть)
-        if referrer_id:
-            ref_res = await session.execute(select(User).where(User.telegram_id == referrer_id))
-            referrer = ref_res.scalar_one_or_none()
-            if referrer:
+        try:
+            await session.commit()
+            
+            # Уведомляем реферера, если он есть
+            if referrer_id:
                 try:
                     await message.bot.send_message(referrer_id, "🎉 У вас новый реферал!")
-                except: pass
+                except: 
+                    pass
+        except Exception as e:
+            await session.rollback()
+            # В случае ошибки базы данных мы увидим её в логах службы
+            print(f"Ошибка при сохранении пользователя: {e}")
 
-    # Текст приветствия (язык пока дефолтный ru)
+    # Текст приветствия из твоего конфига
     text = TEXTS["ru"]["welcome"]
     
     await message.answer(text, reply_markup=main_menu(), parse_mode="HTML")
