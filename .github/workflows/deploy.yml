@@ -16,5 +16,16 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
           cd ~/projects/nexus_ai_bot
-          git pull origin main
+          # Сбрасываем все локальные изменения, чтобы git pull не ругался
+          git fetch origin main
+          git reset --hard origin/main
+          
+          # Устанавливаем зависимости (на случай, если ты добавил новые библиотеки)
+          ./.venv/bin/pip install -r requirements.txt
+          
+          # Перезапускаем службу
           systemctl restart nexusbot
+          
+          # Проверяем статус через 2 секунды, чтобы убедиться, что бот не упал
+          sleep 2
+          systemctl status nexusbot
