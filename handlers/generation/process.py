@@ -168,12 +168,6 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
             await message.answer("⚠️ <b>Текстовая модель ожидает текст!</b>\n\nПожалуйста, отправьте ваш запрос текстом.", parse_mode="HTML")
             return
 
-    # Проверка: модели изображений с "image" в названии требуют фото
-    is_image_model = category == "gen_image" and ("image" in model_id.lower() or "img" in model_info["name"].lower())
-    if is_image_model and not message.photo:
-        await message.answer("❌ Эта модель требует <b>изображение</b>! Прикрепите фото.", parse_mode="HTML")
-        return
-
     # Проверка: image-to-video модели требуют фото
     is_img_model = "image-to" in model_id or "img2vid" in model_info["name"].lower()
     if category == "gen_video" and is_img_model and not message.photo:

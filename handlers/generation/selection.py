@@ -113,14 +113,9 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
         text += "🔍 Теперь напишите ваш <b>вопрос для поиска</b>."
         await state.set_state(GenState.waiting_for_input)
     elif category == "gen_image":
-        # Модели изображений — могут требовать изображение или текст
-        # Проверяем по названию модели
-        if "image" in model_id.lower() or "img" in name.lower():
-            text += "🎨 Теперь отправьте <b>изображение</b> для обработки."
-            await state.set_state(GenState.waiting_for_input)
-        else:
-            text += "🎨 Теперь напишите <b>описание изображения</b> (промпт)."
-            await state.set_state(GenState.waiting_for_input)
+        # Все модели изображений — ждут текстовый промпт
+        text += "🎨 Теперь напишите <b>описание изображения</b> (промпт)."
+        await state.set_state(GenState.waiting_for_input)
     elif category == "gen_video":
         # Видео модели — проверяем тип
         if "motion-control" in model_id:
