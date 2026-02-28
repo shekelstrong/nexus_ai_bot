@@ -403,18 +403,35 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             # Для текстовых моделей используем историю сообщений
             messages = [{"role": "user", "content": prompt}]
             res = await api.generate_text(
-                model_info["id"], 
+                model_info["id"],
                 messages,
                 session=session,
                 user_id=user.id
             )
-            if res:
-                await status_msg.delete()
+            await status_msg.delete()
+
+            if res and not res.startswith("Error:"):
+                # Успешная генерация — сохраняем историю (коммит будет ниже)
+                session.add(
+                    Generation(
+                        user_id=user.id,
+                        model_name=model_info["id"],
+                        prompt=prompt,
+                        result="OK",
+                        status=GenerationStatus.COMPLETED,
+                        cost=cost,
+                    )
+                )
                 await message.answer(res[:4000], parse_mode="Markdown", reply_markup=back_to_menu_kb())
             else:
-                await status_msg.delete()
-                await message.answer("❌ Ошибка: не удалось получить ответ от модели", reply_markup=back_to_menu_kb())
+                # Ошибка генерации — откатываем токен и выходим
+                user.tokens_balance += cost
+                await session.commit()
+                error_msg = res if res else "❌ Ошибка: не удалось получить ответ от модели"
+                await message.answer(f"❌ {error_msg}", reply_markup=back_to_menu_kb())
+                return  # Выходим, чтобы не дублировать коммит и сохранение Generation ниже
 
+        # Для всех категорий (кроме ошибки текстовой модели) сохраняем генерацию
         session.add(
             Generation(
                 user_id=user.id,
