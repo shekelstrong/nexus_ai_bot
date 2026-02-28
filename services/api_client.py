@@ -1,6 +1,7 @@
 import aiohttp
 from typing import Optional, List, Dict, Union, Any
 from aiogram.types import BufferedInputFile
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from utils.logger import logger
@@ -21,17 +22,32 @@ class APIClient:
         self.text_gen = StandardTextGenerator()
         self.seedream_gen = SeedreamGenerator()
         self.std_image_gen = StandardImageGenerator() # OpenRouter (Flux, Gemini)
-        
+
         # FAL
         self.kling_gen = KlingGenerator()
         self.veo_gen = VeoGenerator()
         self.wan_gen = WanGenerator()
-        
+
         self.fal_key = settings.FAL_AI_API_KEY
 
 
-    async def generate_text(self, model: str, messages: List[Dict[str, str]]) -> Optional[str]:
-        return await self.text_gen.generate(model, messages)
+    async def generate_text(
+        self, 
+        model: str, 
+        messages: List[Dict[str, str]],
+        session: Optional[AsyncSession] = None,
+        user_id: Optional[int] = None
+    ) -> Optional[str]:
+        """
+        Генерация текста с поддержкой истории сообщений.
+        
+        Args:
+            model: ID модели
+            messages: Список сообщений [{"role": "user", "content": "..."}]
+            session: SQLAlchemy сессия (для работы с историей)
+            user_id: ID пользователя (для работы с историей)
+        """
+        return await self.text_gen.generate(model, messages, session=session, user_id=user_id)
 
 
     async def generate_image(self, model: str, prompt: str) -> Optional[Union[str, BufferedInputFile]]:

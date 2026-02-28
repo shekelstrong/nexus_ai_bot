@@ -141,10 +141,6 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
         logger.info(f"handle_standard_input: в состоянии {current_state}, тип={type(message).__name__}, игнорируем")
         return
 
-    if message.text and current_state == GenState.waiting_for_input:
-        await message.answer("⚠️ Я жду файл (фото или видео), а не текст.")
-        return
-
     user_id = message.from_user.id
     result = await session.execute(select(User).where(User.telegram_id == user_id))
     user = result.scalar_one_or_none()
@@ -166,6 +162,13 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
                         category = cat
                         break
 
+    # Проверка: текстовые модели должны принимать только текст
+    if category in ["gen_text", "gen_search"]:
+        if not message.text:
+            await message.answer("⚠️ <b>Текстовая модель ожидает текст!</b>\n\nПожалуйста, отправьте ваш запрос текстом.", parse_mode="HTML")
+            return
+
+    # Проверка: image-to-video модели требуют фото
     is_img_model = "image-to" in model_id or "img2vid" in model_info["name"].lower()
     if category == "gen_video" and is_img_model and not message.photo:
         await message.answer("❌ Эта модель требует <b>фотографию</b>! Прикрепите изображение.", parse_mode="HTML")
@@ -371,11 +374,11 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             res = await api.generate_video(model_info["id"], prompt, image_url=image_url)
             if not res:
                 raise Exception("Ошибка видео")
-            
+
             # Для простых видео тоже можно добавить логику скачивания, но пока оставим URL для скорости,
             # или можно адаптировать ту же логику, что в Complex Gen, если нужно.
             # Пока оставим как было, чтобы не усложнять.
-            
+
             await status_msg.delete()
             await message.answer_video(
                 normalize_url(res),
@@ -397,10 +400,20 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             )
 
         elif category in ["gen_text", "gen_search"]:
+            # Для текстовых моделей используем историю сообщений
             messages = [{"role": "user", "content": prompt}]
-            res = await api.generate_text(model_info["id"], messages)
-            await status_msg.delete()
-            await message.answer(res[:4000], parse_mode="Markdown", reply_markup=back_to_menu_kb())
+            res = await api.generate_text(
+                model_info["id"], 
+                messages,
+                session=session,
+                user_id=user.id
+            )
+            if res:
+                await status_msg.delete()
+                await message.answer(res[:4000], parse_mode="Markdown", reply_markup=back_to_menu_kb())
+            else:
+                await status_msg.delete()
+                await message.answer("❌ Ошибка: не удалось получить ответ от модели", reply_markup=back_to_menu_kb())
 
         session.add(
             Generation(

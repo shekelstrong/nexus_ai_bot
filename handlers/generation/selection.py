@@ -88,22 +88,27 @@ async def _send_menu_as_new_message(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("set_model:"))
 async def set_model_handler(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     model_id = callback.data.split(":", 1)[1]
-    
+
     result = await session.execute(select(User).where(User.telegram_id == callback.from_user.id))
     user = result.scalar_one_or_none()
     if user:
         user.current_model = model_id
         await session.commit()
-    
+
     info = MODEL_INFO.get(model_id, {})
     name = info.get("name", "Модель")
-    
+    category = info.get("category", "gen_text")
+
     text = f"✅ <b>Модель установлена!</b>\nВыбрана: <b>{name}</b>\n\n"
-    
+
     await state.clear()
-    
-    # Логика инструкций
-    if "motion-control" in model_id:
+
+    # Логика инструкций в зависимости от категории модели
+    if category in ["gen_text", "gen_search"]:
+        # Текстовые модели — ждут текст
+        text += "✍️ Теперь просто напишите ваш <b>запрос (промпт)</b>."
+        await state.set_state(GenState.waiting_for_input)
+    elif "motion-control" in model_id:
         text += "1️⃣ <b>Шаг 1:</b> Отправьте <b>фотографию персонажа</b>, которого хотите анимировать."
         await state.set_state(GenState.waiting_for_first_image)
     elif "first-last" in model_id:
@@ -116,6 +121,7 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
         text += "📹 Теперь отправьте <b>видео файл</b> для обработки."
         await state.set_state(GenState.waiting_for_input)
     else:
+        # По умолчанию — текстовый запрос
         text += "✍️ Теперь просто напишите ваш <b>запрос (промпт)</b>."
         await state.set_state(GenState.waiting_for_input)
 
