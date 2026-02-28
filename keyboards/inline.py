@@ -41,29 +41,45 @@ def back_to_menu_kb():
 # --- ВЫБОР СЕМЕЙСТВА МОДЕЛЕЙ ---
 def model_families_menu(category: str):
     from model_config import MODEL_CATALOG
-    
+
     buttons = []
     families = MODEL_CATALOG.get(category, {})
-    
+
+    # Красивые названия для семейств
+    family_titles = {
+        # Текстовые
+        "openai": "OpenAI (GPT)",
+        "anthropic": "Anthropic (Claude)",
+        "google": "Google (Gemini)",
+        "deepseek": "DeepSeek",
+        "meta": "Meta (Llama)",
+        "xai": "xAI (Grok)",
+        "qwen": "Qwen (Alibaba)",
+        "moonshotai": "Moonshot (Kimi)",
+        "mistral": "Mistral AI",
+        "tngtech": "TNG (Free)",
+        # Изображения
+        "flux": "Flux",
+        "riverflow": "Riverflow",
+        "seedream": "Seedream",
+        "gemini_image": "Gemini Image",
+        # Видео
+        "kling": "Kling AI",
+        "veo": "Google Veo",
+        "wan": "Wan Video",
+        "luma": "Luma Dream Machine",
+        # Поиск
+        "perplexity": "Perplexity Search",
+    }
+
     row = []
     for fam_key, fam_data in families.items():
-        fam_name = fam_key.capitalize() 
-        if fam_key == "openai": fam_name = "OpenAI (GPT)"
-        if fam_key == "google": fam_name = "Google (Gemini)"
-        if fam_key == "anthropic": fam_name = "Anthropic (Claude)"
-        if fam_key == "midjourney": fam_name = "Midjourney Style"
-        if fam_key == "flux": fam_name = "Flux & SD"
-        if fam_key == "kling": fam_name = "Kling AI"
-        if fam_key == "veo": fam_name = "Google Veo"
-        if fam_key == "wan": fam_name = "Wan Video"
-        if fam_key == "luma": fam_name = "Luma Dream Machine"
-        if fam_key == "perplexity": fam_name = "Perplexity Search"
-        
+        fam_name = family_titles.get(fam_key, fam_key.capitalize())
         row.append(InlineKeyboardButton(text=fam_name, callback_data=f"family:{category}:{fam_key}"))
         if len(row) == 2:
             buttons.append(row)
             row = []
-            
+
     if row: buttons.append(row)
     buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)

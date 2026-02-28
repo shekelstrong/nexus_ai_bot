@@ -193,6 +193,13 @@ class StandardTextGenerator:
         if any(x in model for x in ["reasoning", "r1", "o1", "o3"]):
             payload["include_reasoning"] = True
 
+        # Если модель Perplexity с поиском — добавляем флаги
+        if "perplexity" in model.lower() and ("search" in model.lower() or "sonar" in model.lower()):
+            payload["extra_body"] = {
+                "use_context": True,
+                "search_depth": "high" if "pro" in model.lower() else "standard"
+            }
+
         # Логирование для отладки
         logger.info(f"Text Gen: model={model}, messages_count={len(full_messages)}")
         logger.debug(f"Text Gen payload: {payload}")

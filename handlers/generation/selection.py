@@ -104,22 +104,41 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
     await state.clear()
 
     # Логика инструкций в зависимости от категории модели
-    if category in ["gen_text", "gen_search"]:
+    if category == "gen_text":
         # Текстовые модели — ждут текст
         text += "✍️ Теперь просто напишите ваш <b>запрос (промпт)</b>."
         await state.set_state(GenState.waiting_for_input)
-    elif "motion-control" in model_id:
-        text += "1️⃣ <b>Шаг 1:</b> Отправьте <b>фотографию персонажа</b>, которого хотите анимировать."
-        await state.set_state(GenState.waiting_for_first_image)
-    elif "first-last" in model_id:
-        text += "1️⃣ <b>Шаг 1:</b> Отправьте <b>первую картинку</b> (начальный кадр)."
-        await state.set_state(GenState.waiting_for_first_image)
-    elif "image-to-video" in model_id or "img2vid" in name.lower() or "reference" in model_id:
-        text += "📸 Теперь отправьте <b>фотографию</b>, которую нужно оживить."
+    elif category == "gen_search":
+        # Поисковые модели — ждут текст
+        text += "🔍 Теперь напишите ваш <b>вопрос для поиска</b>."
         await state.set_state(GenState.waiting_for_input)
-    elif "video-to" in model_id or "extend" in model_id:
-        text += "📹 Теперь отправьте <b>видео файл</b> для обработки."
-        await state.set_state(GenState.waiting_for_input)
+    elif category == "gen_image":
+        # Модели изображений — могут требовать изображение или текст
+        # Проверяем по названию модели
+        if "image" in model_id.lower() or "img" in name.lower():
+            text += "🎨 Теперь отправьте <b>изображение</b> для обработки."
+            await state.set_state(GenState.waiting_for_input)
+        else:
+            text += "🎨 Теперь напишите <b>описание изображения</b> (промпт)."
+            await state.set_state(GenState.waiting_for_input)
+    elif category == "gen_video":
+        # Видео модели — проверяем тип
+        if "motion-control" in model_id:
+            text += "1️⃣ <b>Шаг 1:</b> Отправьте <b>фотографию персонажа</b>, которого хотите анимировать."
+            await state.set_state(GenState.waiting_for_first_image)
+        elif "first-last" in model_id or "first_last" in model_id:
+            text += "1️⃣ <b>Шаг 1:</b> Отправьте <b>первую картинку</b> (начальный кадр)."
+            await state.set_state(GenState.waiting_for_first_image)
+        elif "image-to-video" in model_id or "img2vid" in model_id or "reference-to-video" in model_id:
+            text += "📸 Теперь отправьте <b>фотографию</b>, которую нужно оживить."
+            await state.set_state(GenState.waiting_for_input)
+        elif "extend" in model_id:
+            text += "📹 Теперь отправьте <b>видео</b> для продолжения."
+            await state.set_state(GenState.waiting_for_input)
+        else:
+            # Text-to-video
+            text += "🎬 Теперь напишите <b>описание видео</b> (промпт)."
+            await state.set_state(GenState.waiting_for_input)
     else:
         # По умолчанию — текстовый запрос
         text += "✍️ Теперь просто напишите ваш <b>запрос (промпт)</b>."
