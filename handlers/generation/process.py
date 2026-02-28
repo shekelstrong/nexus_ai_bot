@@ -49,13 +49,24 @@ def normalize_url(raw: Optional[str]) -> Optional[str]:
 
     m = _MD_LINK_RE.match(s)
     if m:
-        return m.group(1)
+        url = m.group(1)
+    else:
+        m2 = _URL_RE.search(s)
+        if m2:
+            url = m2.group(1)
+        else:
+            url = s
 
-    m2 = _URL_RE.search(s)
-    if m2:
-        return m2.group(1)
+    # Дополнительная очистка URL от недопустимых символов
+    # Telegram не принимает URL с пробелами и некоторыми спецсимволами
+    url = url.replace(" ", "%20")
+    url = url.replace("{", "%7B").replace("}", "%7D")
+    url = url.replace("|", "%7C")
+    url = url.replace("\\", "/")
+    url = url.replace("^", "%5E")
+    url = url.replace("`", "%60")
 
-    return s
+    return url
 
 
 @router.message(GenState.waiting_for_first_image, F.photo)
@@ -391,13 +402,30 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             res = await api.generate_image(model_info["id"], prompt)
             if not res:
                 raise Exception("Ошибка фото")
+            
+            # Логирование URL для отладки
+            image_url = normalize_url(res)
+            logger.info(f"Image URL: {image_url}")
+            
             await status_msg.delete()
-            await message.answer_photo(
-                normalize_url(res),
-                caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
-                parse_mode="HTML",
-                reply_markup=back_to_menu_kb(),
-            )
+            try:
+                await message.answer_photo(
+                    image_url,
+                    caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
+                    parse_mode="HTML",
+                    reply_markup=back_to_menu_kb(),
+                )
+            except Exception as send_error:
+                # Если отправка по URL не удалась, пробуем сообщить об ошибке
+                logger.error(f"Failed to send image: {send_error}")
+                await message.answer(
+                    f"🎨 <b>{model_info['name']}</b>\n"
+                    f"🍌 -{cost}\n\n"
+                    f"⚠️ Не удалось отправить изображение в Telegram.\n"
+                    f"🔗 <a href='{image_url}'>Скачать изображение</a>",
+                    parse_mode="HTML",
+                    reply_markup=back_to_menu_kb(),
+                )
 
         elif category in ["gen_text", "gen_search"]:
             # Для текстовых моделей используем историю сообщений
@@ -448,7 +476,11 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
         logger.error(f"Simple Gen Error: {e}")
         user.tokens_balance += cost
         await session.commit()
-        await status_msg.edit_text(f"❌ Ошибка: {str(e)}")
+        # Пробуем редактировать статусное сообщение, но если не выйдет — шлём новое
+        try:
+            await status_msg.edit_text(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
+        except:
+            await message.answer(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
 
 
 async def _get_file_url_or_base64(bot, file_id, is_video=False):
