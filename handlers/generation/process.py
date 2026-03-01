@@ -403,29 +403,52 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             if not res:
                 raise Exception("Ошибка фото")
             
-            # Логирование URL для отладки
-            image_url = normalize_url(res)
-            logger.info(f"Image URL: {image_url}")
-            
             await status_msg.delete()
+            
+            # Проверяем тип результата: URL (строка) или BufferedInputFile (файл)
+            from aiogram.types import BufferedInputFile
+            
             try:
-                await message.answer_photo(
-                    image_url,
-                    caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
-                    parse_mode="HTML",
-                    reply_markup=back_to_menu_kb(),
-                )
+                if isinstance(res, BufferedInputFile):
+                    # Изображение в base64 — отправляем как файл
+                    logger.info("Sending image as BufferedInputFile (base64)")
+                    await message.answer_photo(
+                        res,
+                        caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
+                        parse_mode="HTML",
+                        reply_markup=back_to_menu_kb(),
+                    )
+                else:
+                    # Изображение по URL
+                    image_url = normalize_url(str(res))
+                    logger.info(f"Image URL: {image_url}")
+                    await message.answer_photo(
+                        image_url,
+                        caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
+                        parse_mode="HTML",
+                        reply_markup=back_to_menu_kb(),
+                    )
             except Exception as send_error:
-                # Если отправка по URL не удалась, пробуем сообщить об ошибке
+                # Если отправка не удалась — пробуем показать ссылку
                 logger.error(f"Failed to send image: {send_error}")
-                await message.answer(
-                    f"🎨 <b>{model_info['name']}</b>\n"
-                    f"🍌 -{cost}\n\n"
-                    f"⚠️ Не удалось отправить изображение в Telegram.\n"
-                    f"🔗 <a href='{image_url}'>Скачать изображение</a>",
-                    parse_mode="HTML",
-                    reply_markup=back_to_menu_kb(),
-                )
+                if not isinstance(res, BufferedInputFile):
+                    image_url = normalize_url(str(res))
+                    await message.answer(
+                        f"🎨 <b>{model_info['name']}</b>\n"
+                        f"🍌 -{cost}\n\n"
+                        f"⚠️ Не удалось отправить изображение в Telegram.\n"
+                        f"🔗 <a href='{image_url}'>Скачать изображение</a>",
+                        parse_mode="HTML",
+                        reply_markup=back_to_menu_kb(),
+                    )
+                else:
+                    await message.answer(
+                        f"🎨 <b>{model_info['name']}</b>\n"
+                        f"🍌 -{cost}\n\n"
+                        f"⚠️ Ошибка отправки: {send_error}",
+                        parse_mode="HTML",
+                        reply_markup=back_to_menu_kb(),
+                    )
 
         elif category in ["gen_text", "gen_search"]:
             # Для текстовых моделей используем историю сообщений
