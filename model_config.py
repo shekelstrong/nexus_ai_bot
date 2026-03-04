@@ -108,9 +108,9 @@ MODEL_CATALOG = {
         },
         "gemini_image": {
             "models": [
-                {"id": "google/gemini-3-pro-image-preview", "name": "Gemini 3 Pro Image", "cost": 8},
-                {"id": "google/gemini-2.5-flash-image", "name": "Gemini 2.5 Flash Image", "cost": 3},
-                {"id": "google/gemini-2.5-flash-image-preview", "name": "Gemini 2.5 Flash Image Preview", "cost": 3},
+                {"id": "google/gemini-3-pro-image-preview", "name": "Nano Banana Pro", "cost": 8},
+                {"id": "google/gemini-2.5-flash-image", "name": "Nano Banana", "cost": 3},
+                {"id": "google/gemini-2.5-flash-image-preview", "name": "Nano Banana Preview", "cost": 3},
                 {"id": "openai/gpt-5-image", "name": "GPT-5 Image", "cost": 5},
                 {"id": "openai/gpt-5-image-mini", "name": "GPT-5 Image Mini", "cost": 2},
             ]
