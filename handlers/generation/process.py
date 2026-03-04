@@ -144,7 +144,7 @@ async def step_second_image(message: Message, state: FSMContext, session: AsyncS
     await state.clear()
 
 
-@router.message(F.text | F.photo | F.video)
+@router.message((F.text) | (F.photo) | (F.video))
 async def handle_standard_input(message: Message, state: FSMContext, session: AsyncSession):
     current_state = await state.get_state()
 

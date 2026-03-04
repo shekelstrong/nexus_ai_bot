@@ -1,13 +1,13 @@
 import uuid
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from database.models import User
-from keyboards.inline import main_menu 
+from keyboards.inline import main_menu
 from config import TEXTS
 
 router = Router(name="start_router")
@@ -15,7 +15,7 @@ router = Router(name="start_router")
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
     await state.clear()
-    
+
     # Реферальная система: достаем ID пригласившего из ссылки
     args = message.text.split()
     referrer_id = None
@@ -27,7 +27,7 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
     # Проверка, есть ли уже такой пользователь в базе
     result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         # Создаем нового пользователя с генерацией обязательного referral_code
         user = User(
@@ -41,12 +41,12 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
         session.add(user)
         try:
             await session.commit()
-            
+
             # Уведомляем реферера, если он есть
             if referrer_id:
                 try:
                     await message.bot.send_message(referrer_id, "🎉 У вас новый реферал!")
-                except: 
+                except:
                     pass
         except Exception as e:
             await session.rollback()
@@ -55,5 +55,19 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
 
     # Текст приветствия из твоего конфига
     text = TEXTS["ru"]["welcome"]
-    
+
     await message.answer(text, reply_markup=main_menu(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "support")
+async def support_cb(cb: CallbackQuery):
+    """Обработчик кнопки Поддержка"""
+    text = (
+        "👨‍💻 <b>Поддержка Nexus AI</b>\n\n"
+        "Если у вас возникли вопросы или проблемы, напишите нам:\n\n"
+        "📧 Email: <code>support@nexus-ai.bot</code>\n"
+        "📱 Telegram: <a href='https://t.me/nexus_ai_support'>@nexus_ai_support</a>\n\n"
+        "⏰ Мы отвечаем в течение 24 часов."
+    )
+    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=main_menu())
+    await cb.answer()

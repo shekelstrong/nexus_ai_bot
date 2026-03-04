@@ -43,7 +43,7 @@ async def show_subscriptions(cb: CallbackQuery):
     await cb.answer()
 
 
-@router.callback_query(F.data.startswith("tier_") | F.data.startswith("tier:"))
+@router.callback_query((F.data.startswith("tier_")) | (F.data.startswith("tier:")))
 async def tier_selected(cb: CallbackQuery):
     """
     Показываем подробное описание выбранного тарифа.
@@ -104,7 +104,7 @@ async def tier_selected(cb: CallbackQuery):
     await cb.answer()
 
 
-@router.callback_query(F.data == "packet_video" | (F.data == "packet:video"))
+@router.callback_query((F.data == "packet_video") | (F.data == "packet:video"))
 async def packet_video_selected(cb: CallbackQuery):
     """Меню выбора видео-пакета"""
     text = (
@@ -126,7 +126,7 @@ async def packet_video_selected(cb: CallbackQuery):
     await cb.answer()
 
 
-@router.callback_query(F.data == "packet_audio" | (F.data == "packet:audio"))
+@router.callback_query((F.data == "packet_audio") | (F.data == "packet:audio"))
 async def packet_audio_selected(cb: CallbackQuery):
     """Меню выбора аудио-пакета"""
     text = (
@@ -147,7 +147,7 @@ async def packet_audio_selected(cb: CallbackQuery):
     await cb.answer()
 
 
-@router.callback_query(F.data.startswith("buy_video_") | F.data.startswith("buy_packet:video_"))
+@router.callback_query((F.data.startswith("buy_video_")) | (F.data.startswith("buy_packet:video_")))
 async def buy_video_packet(cb: CallbackQuery):
     if cb.data.startswith("buy_video_"):
         packet_id = "video_" + cb.data.split("_", 2)[2]
@@ -170,7 +170,7 @@ async def buy_video_packet(cb: CallbackQuery):
     await cb.answer()
 
 
-@router.callback_query(F.data.startswith("buy_audio_") | F.data.startswith("buy_packet:audio_"))
+@router.callback_query((F.data.startswith("buy_audio_")) | (F.data.startswith("buy_packet:audio_")))
 async def buy_audio_packet(cb: CallbackQuery):
     if cb.data.startswith("buy_audio_"):
         packet_id = "audio_" + cb.data.split("_", 2)[2]
@@ -193,7 +193,7 @@ async def buy_audio_packet(cb: CallbackQuery):
     await cb.answer()
 
 
-@router.callback_query(F.data.startswith("pay_stars_") | F.data.startswith("pay:stars:"))
+@router.callback_query((F.data.startswith("pay_stars_")) | (F.data.startswith("pay:stars:")))
 async def pay_stars(cb: CallbackQuery, session: AsyncSession):
     if cb.data.startswith("pay_stars_"):
         parts = cb.data.split("_")
