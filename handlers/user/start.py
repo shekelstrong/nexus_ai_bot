@@ -1,6 +1,6 @@
 import uuid
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,15 +59,20 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
     await message.answer(text, reply_markup=main_menu(), parse_mode="HTML")
 
 
+def support_menu() -> InlineKeyboardMarkup:
+    """Клавиатура с кнопками поддержки"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 Поддержка", url="https://t.me/Anna16lu")],
+        [InlineKeyboardButton(text="🛠 Техническая поддержка", url="https://t.me/nedopekin")],
+        [InlineKeyboardButton(text="📄 Политика конфиденциальности", url="https://telegra.ph/Politika-konfidencialnosti-08-15-17")],
+        [InlineKeyboardButton(text="📋 Пользовательское соглашение", url="https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")],
+    ])
+
+
 @router.callback_query(F.data == "support")
 async def support_cb(cb: CallbackQuery):
     """Обработчик кнопки Поддержка"""
-    text = (
-        "👨‍💻 <b>Поддержка Nexus AI</b>\n\n"
-        "Если у вас возникли вопросы или проблемы, напишите нам:\n\n"
-        "📧 Email: <code>support@nexus-ai.bot</code>\n"
-        "📱 Telegram: <a href='https://t.me/nexus_ai_support'>@nexus_ai_support</a>\n\n"
-        "⏰ Мы отвечаем в течение 24 часов."
-    )
-    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=main_menu())
+    text = "👨‍💻 <b>Поддержка Nexus AI</b>\n\nВыберите раздел:"
+    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=support_menu())
     await cb.answer()
