@@ -19,27 +19,39 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
 
     # Реферальная система: достаем ID пригласившего из ссылки
     args = message.text.split()
-    referrer_id = None
+    referrer_telegram_id = None
     if len(args) > 1 and args[1].isdigit():
-        referrer_id = int(args[1])
-        if referrer_id == message.from_user.id:
-            referrer_id = None
+        referrer_telegram_id = int(args[1])
+        if referrer_telegram_id == message.from_user.id:
+            referrer_telegram_id = None
 
     # Проверка, есть ли уже такой пользователь в базе
     result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
     user = result.scalar_one_or_none()
 
     is_new_user = False
-    
+
     if not user:
         is_new_user = True
+        
+        # Находим внутреннего referrer_id по telegram_id
+        referrer_internal_id = None
+        referrer_user = None
+        if referrer_telegram_id:
+            ref_result = await session.execute(
+                select(User).where(User.telegram_id == referrer_telegram_id)
+            )
+            referrer_user = ref_result.scalar_one_or_none()
+            if referrer_user:
+                referrer_internal_id = referrer_user.id  # Внутренний ID для FK
+
         # Создаем нового пользователя с генерацией обязательного referral_code
         user = User(
             telegram_id=message.from_user.id,
             username=message.from_user.username,
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
-            referrer_id=referrer_id,
+            referrer_id=referrer_internal_id,  # Сохраняем внутренний ID (FK)
             referral_code=str(uuid.uuid4())[:8] # Генерация уникального короткого кода
         )
         session.add(user)
@@ -47,47 +59,27 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
             await session.commit()
 
             # Уведомляем реферера, если он есть
-            if referrer_id:
-                try:
-                    # Получаем данные реферера
-                    ref_result = await session.execute(
-                        select(User).where(User.telegram_id == referrer_id)
-                    )
-                    referrer = ref_result.scalar_one_or_none()
-                    
-                    if referrer:
-                        # Уведомление рефоводу
-                        await notify_referrer_new_referral(
-                            bot=message.bot,
-                            referrer_id=referrer_id,
-                            new_user_id=message.from_user.id,
-                            new_user_username=message.from_user.username,
-                            welcome_bonus=0.0,  # Приветственного бонуса нет, только % от пополнений
-                        )
-                        
-                        # Уведомление админам о новом пользователе с рефоводом
-                        await notify_admin_new_user(
-                            bot=message.bot,
-                            user_id=message.from_user.id,
-                            username=message.from_user.username,
-                            referrer_id=referrer_id,
-                            referrer_username=referrer.username,
-                            referrer_bonus=0.0,
-                        )
-                    else:
-                        # Реферер не найден (удален или не существует)
-                        await notify_admin_new_user(
-                            bot=message.bot,
-                            user_id=message.from_user.id,
-                            username=message.from_user.username,
-                            referrer_id=referrer_id,
-                            referrer_username=None,
-                            referrer_bonus=0.0,
-                        )
-                except Exception as e:
-                    print(f"Error notifying referrer: {e}")
+            if referrer_user:
+                # Уведомление рефоводу
+                await notify_referrer_new_referral(
+                    bot=message.bot,
+                    referrer_id=referrer_user.telegram_id,
+                    new_user_id=message.from_user.id,
+                    new_user_username=message.from_user.username,
+                    welcome_bonus=0.0,  # Приветственного бонуса нет, только % от пополнений
+                )
+
+                # Уведомление админам о новом пользователе с рефоводом
+                await notify_admin_new_user(
+                    bot=message.bot,
+                    user_id=message.from_user.id,
+                    username=message.from_user.username,
+                    referrer_id=referrer_user.telegram_id,
+                    referrer_username=referrer_user.username,
+                    referrer_bonus=0.0,
+                )
             else:
-                # Нет реферера - просто уведомляем админа
+                # Нет реферера или реферер не найден - просто уведомляем админа
                 await notify_admin_new_user(
                     bot=message.bot,
                     user_id=message.from_user.id,
@@ -96,7 +88,7 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
                     referrer_username=None,
                     referrer_bonus=0.0,
                 )
-                
+
         except Exception as e:
             await session.rollback()
             # В случае ошибки базы данных мы увидим её в логах службы
