@@ -16,7 +16,7 @@ from sqlalchemy import select, desc
 
 from database.models import User, Generation, GenerationStatus, MessageHistory
 from services.api_client import APIClient
-from keyboards.inline import main_menu, back_to_menu_kb
+from keyboards.inline import main_menu, back_to_menu_kb, references_ready_kb, image_gen_mode_kb
 from utils.logger import logger
 from model_config import MODEL_CATALOG
 from states.generation_states import GenState
@@ -144,6 +144,84 @@ async def step_second_image(message: Message, state: FSMContext, session: AsyncS
     await state.clear()
 
 
+# --- ОБРАБОТКА РЕФЕРЕНСОВ ДЛЯ ГЕНЕРАЦИИ ИЗОБРАЖЕНИЙ ---
+@router.message(GenState.waiting_for_reference_images, F.photo)
+async def step_reference_image(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка загруженного референса (изображения)"""
+    data = await state.get_data()
+    reference_images = data.get("reference_images", [])
+    
+    if len(reference_images) >= 3:
+        await message.answer("⚠️ Максимум 3 референса! Нажмите ✅ Готово или ◀️ Отмена.", reply_markup=references_ready_kb())
+        return
+    
+    photo = message.photo[-1]
+    file_id = photo.file_id
+    
+    # Получаем URL или base64 для референса
+    ref_url = await _get_file_url_or_base64(message.bot, file_id)
+    
+    if ref_url:
+        reference_images.append(ref_url)
+        await state.update_data(reference_images=reference_images)
+        
+        remaining = 3 - len(reference_images)
+        if remaining > 0:
+            await message.answer(
+                f"✅ Референс #{len(reference_images)} принят!\n\n"
+                f"Можно добавить еще <b>{remaining}</b> референс(а/ов).\n"
+                f"Когда закончите — нажмите кнопку ✅ Готово.",
+                reply_markup=references_ready_kb(),
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer(
+                f"✅ Референс #{len(reference_images)} принят!\n\n"
+                f"<b>Максимум референсов достигнут.</b>\n"
+                f"Нажмите ✅ Готово для продолжения.",
+                reply_markup=references_ready_kb()
+            )
+    else:
+        await message.answer("❌ Ошибка загрузки изображения. Попробуйте еще раз.")
+
+
+@router.message(GenState.waiting_for_reference_images, F.text)
+async def step_reference_text_hint(message: Message, state: FSMContext):
+    """Подсказка если пользователь отправил текст вместо фото"""
+    await message.answer(
+        "📸 Пожалуйста, отправьте <b>изображение</b> как референс.\n"
+        f"Или нажмите кнопку, если референсы больше не нужны.",
+        reply_markup=references_ready_kb(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(GenState.waiting_for_image_prompt, F.text)
+async def step_image_prompt(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка текстового промпта после загрузки референсов"""
+    data = await state.get_data()
+    reference_images = data.get("reference_images", [])
+    prompt = message.text
+    
+    if not prompt or len(prompt) < 3:
+        await message.answer("⚠️ Промпт слишком короткий. Напишите более подробное описание.")
+        return
+    
+    # Запускаем генерацию с референсами или без
+    await run_image_generation(message, session, prompt, reference_images)
+    await state.clear()
+
+
+@router.message(GenState.waiting_for_image_prompt, F.photo)
+async def step_image_prompt_photo_hint(message: Message, state: FSMContext):
+    """Если пользователь отправил фото вместо текста промпта"""
+    await message.answer(
+        "✍️ Пожалуйста, напишите <b>текстовое описание</b> (промпт).\n"
+        "Референсы уже загружены, теперь нужно описание того, что генерировать.",
+        parse_mode="HTML"
+    )
+
+
 @router.message((F.text) | (F.photo) | (F.video))
 async def handle_standard_input(message: Message, state: FSMContext, session: AsyncSession):
     current_state = await state.get_state()
@@ -183,6 +261,15 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
     is_img_model = "image-to" in model_id or "img2vid" in model_info["name"].lower()
     if category == "gen_video" and is_img_model and not message.photo:
         await message.answer("❌ Эта модель требует <b>фотографию</b>! Прикрепите изображение.", parse_mode="HTML")
+        return
+
+    # Для изображений - перенаправляем на выбор режима, если это первое сообщение
+    if category == "gen_image" and current_state == GenState.waiting_for_input:
+        # Предлагаем выбор режима
+        await message.answer(
+            "🎨 Выберите режим генерации:",
+            reply_markup=image_gen_mode_kb()
+        )
         return
 
     await run_simple_generation(message, user, session, model_info, category)
@@ -360,6 +447,122 @@ async def run_complex_generation(
                 pass
 
 
+async def run_image_generation(
+    message: Message,
+    session: AsyncSession,
+    prompt: str,
+    reference_images: list = None,
+):
+    """
+    Генерация изображения с поддержкой референсов.
+    
+    Args:
+        message: Сообщение с промптом
+        session: DB сессия
+        prompt: Текстовый промпт
+        reference_images: Список URL/base64 референсов (до 3)
+    """
+    if reference_images is None:
+        reference_images = []
+    
+    user_id = message.from_user.id
+    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    user = result.scalar_one_or_none()
+
+    model_id = user.current_model
+    model_info = ALL_MODELS.get(model_id, {"cost": 1, "name": "Unknown"})
+    cost = model_info.get("cost", 1)
+
+    if user.tokens_balance < cost:
+        await message.answer(f"❌ Недостаточно бананов! Нужно {cost}.", parse_mode="HTML")
+        return
+
+    user.tokens_balance -= cost
+    await session.commit()
+
+    status_msg = await message.answer(
+        f"⏳ <b>{model_info['name']}</b>\nГенерирую изображение...",
+        parse_mode="HTML"
+    )
+    
+    api = APIClient()
+
+    try:
+        # Вызываем генератор с референсами
+        res = await api.generate_image(model_info["id"], prompt, reference_images=reference_images)
+        
+        if not res:
+            raise Exception("Ошибка генерации изображения")
+
+        await status_msg.delete()
+
+        # Проверяем тип результата: URL (строка) или BufferedInputFile (файл)
+        from aiogram.types import BufferedInputFile
+
+        try:
+            if isinstance(res, BufferedInputFile):
+                # Изображение в base64 — отправляем как файл
+                logger.info("Sending image as BufferedInputFile (base64)")
+                await message.answer_photo(
+                    res,
+                    caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
+                    parse_mode="HTML",
+                    reply_markup=back_to_menu_kb(),
+                )
+            else:
+                # Изображение по URL
+                image_url = normalize_url(str(res))
+                logger.info(f"Image URL: {image_url}")
+                await message.answer_photo(
+                    image_url,
+                    caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
+                    parse_mode="HTML",
+                    reply_markup=back_to_menu_kb(),
+                )
+        except Exception as send_error:
+            # Если отправка не удалась — пробуем показать ссылку
+            logger.error(f"Failed to send image: {send_error}")
+            if not isinstance(res, BufferedInputFile):
+                image_url = normalize_url(str(res))
+                await message.answer(
+                    f"🎨 <b>{model_info['name']}</b>\n"
+                    f"🍌 -{cost}\n\n"
+                    f"⚠️ Не удалось отправить изображение в Telegram.\n"
+                    f"🔗 <a href='{image_url}'>Скачать изображение</a>",
+                    parse_mode="HTML",
+                    reply_markup=back_to_menu_kb(),
+                )
+            else:
+                await message.answer(
+                    f"🎨 <b>{model_info['name']}</b>\n"
+                    f"🍌 -{cost}\n\n"
+                    f"⚠️ Ошибка отправки: {send_error}",
+                    parse_mode="HTML",
+                    reply_markup=back_to_menu_kb(),
+                )
+
+        session.add(
+            Generation(
+                user_id=user.id,
+                model_name=model_id,
+                prompt=prompt,
+                result="OK",
+                status=GenerationStatus.COMPLETED,
+                cost=cost,
+            )
+        )
+        await session.commit()
+
+    except Exception as e:
+        logger.error(f"Image Gen Error: {e}")
+        user.tokens_balance += cost
+        await session.commit()
+        try:
+            await status_msg.edit_text(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
+        except:
+            await message.answer(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
+
+
 async def run_simple_generation(message: Message, user: User, session: AsyncSession, model_info: dict, category: str):
     cost = model_info.get("cost", 1)
     prompt = message.caption or message.text or ""
@@ -399,56 +602,10 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             )
 
         elif category == "gen_image":
-            res = await api.generate_image(model_info["id"], prompt)
-            if not res:
-                raise Exception("Ошибка фото")
-            
-            await status_msg.delete()
-            
-            # Проверяем тип результата: URL (строка) или BufferedInputFile (файл)
-            from aiogram.types import BufferedInputFile
-            
-            try:
-                if isinstance(res, BufferedInputFile):
-                    # Изображение в base64 — отправляем как файл
-                    logger.info("Sending image as BufferedInputFile (base64)")
-                    await message.answer_photo(
-                        res,
-                        caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
-                        parse_mode="HTML",
-                        reply_markup=back_to_menu_kb(),
-                    )
-                else:
-                    # Изображение по URL
-                    image_url = normalize_url(str(res))
-                    logger.info(f"Image URL: {image_url}")
-                    await message.answer_photo(
-                        image_url,
-                        caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
-                        parse_mode="HTML",
-                        reply_markup=back_to_menu_kb(),
-                    )
-            except Exception as send_error:
-                # Если отправка не удалась — пробуем показать ссылку
-                logger.error(f"Failed to send image: {send_error}")
-                if not isinstance(res, BufferedInputFile):
-                    image_url = normalize_url(str(res))
-                    await message.answer(
-                        f"🎨 <b>{model_info['name']}</b>\n"
-                        f"🍌 -{cost}\n\n"
-                        f"⚠️ Не удалось отправить изображение в Telegram.\n"
-                        f"🔗 <a href='{image_url}'>Скачать изображение</a>",
-                        parse_mode="HTML",
-                        reply_markup=back_to_menu_kb(),
-                    )
-                else:
-                    await message.answer(
-                        f"🎨 <b>{model_info['name']}</b>\n"
-                        f"🍌 -{cost}\n\n"
-                        f"⚠️ Ошибка отправки: {send_error}",
-                        parse_mode="HTML",
-                        reply_markup=back_to_menu_kb(),
-                    )
+            # Используем новую функцию с поддержкой референсов
+            # Для обратной совместимости, если нет референсов - передаем пустой список
+            await run_image_generation(message, session, prompt, reference_images=[])
+            return  # run_image_generation уже сохраняет Generation и делает коммит
 
         elif category in ["gen_text", "gen_search"]:
             # Для текстовых моделей используем историю сообщений

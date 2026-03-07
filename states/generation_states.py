@@ -3,8 +3,12 @@ from aiogram.fsm.state import State, StatesGroup
 class GenState(StatesGroup):
     # Для обычных моделей (ждем промпт или файл)
     waiting_for_input = State()
-    
+
     # Для сложных сценариев (Motion Control, First-Last)
     waiting_for_first_image = State()   # Ждем картинку персонажа / первого кадра
     waiting_for_second_image = State()  # Ждем второй кадр (для First-Last)
     waiting_for_reference_video = State() # Ждем видео с движением (для Motion Control)
+    
+    # Для генерации изображений с референсами
+    waiting_for_reference_images = State()  # Ждем референсы (до 3 фото)
+    waiting_for_image_prompt = State()      # Ждем текстовый промпт после референсов

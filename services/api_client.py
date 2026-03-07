@@ -32,15 +32,15 @@ class APIClient:
 
 
     async def generate_text(
-        self, 
-        model: str, 
+        self,
+        model: str,
         messages: List[Dict[str, str]],
         session: Optional[AsyncSession] = None,
         user_id: Optional[int] = None
     ) -> Optional[str]:
         """
         Генерация текста с поддержкой истории сообщений.
-        
+
         Args:
             model: ID модели
             messages: Список сообщений [{"role": "user", "content": "..."}]
@@ -50,15 +50,30 @@ class APIClient:
         return await self.text_gen.generate(model, messages, session=session, user_id=user_id)
 
 
-    async def generate_image(self, model: str, prompt: str) -> Optional[Union[str, BufferedInputFile]]:
-        model_lower = model.lower()
+    async def generate_image(
+        self,
+        model: str,
+        prompt: str,
+        reference_images: Optional[List[str]] = None
+    ) -> Optional[Union[str, BufferedInputFile]]:
+        """
+        Генерация изображения с поддержкой референсов.
+
+        Args:
+            model: ID модели
+            prompt: Текстовый промпт
+            reference_images: Список URL/base64 референсов (до 3)
+        """
+        if reference_images is None:
+            reference_images = []
         
+        model_lower = model.lower()
+
         if "seedream" in model_lower:
-            return await self.seedream_gen.generate(model, prompt)
-            
-        # Stable Diffusion через FAL (если нужно, можно добавить отдельный генератор)
-        # Пока оставим стандартный генератор, если он поддерживает SD
-        return await self.std_image_gen.generate(model, prompt)
+            return await self.seedream_gen.generate(model, prompt, reference_images)
+
+        # Все остальные модели (Flux, Gemini Image, и т.д.)
+        return await self.std_image_gen.generate(model, prompt, reference_images)
 
 
     async def generate_video(
