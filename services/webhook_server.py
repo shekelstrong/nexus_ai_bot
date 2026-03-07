@@ -6,6 +6,7 @@ HTTP сервер для обработки вебхуков от Platega.
 import asyncio
 import json
 import logging
+from datetime import datetime
 from decimal import Decimal
 from typing import Callable
 
@@ -14,7 +15,6 @@ from aiohttp import web
 from database.db import db
 from database.session import async_session_maker
 from services.payments import process_platega_payment
-from handlers.admin.notifications import notify_admin_payment, notify_user_purchase
 from utils.logger import setup_logger
 
 logger = setup_logger()
@@ -64,96 +64,171 @@ class WebhookServer:
                 logger.error("No payload in webhook")
                 return web.json_response({"status": "error", "msg": "no payload"}, status=400)
             
-            # Создаем callback для уведомлений
-            async def notify_callback(referrer_id: int, level: int, bonus: Decimal):
-                try:
-                    # Получаем данные о пользователе который оплатил
-                    # (нужно распарсить order_id)
-                    parts = str(order_id).split("_")
-                    if len(parts) >= 3:
-                        user_tg_id = int(parts[-1])
-                        await self.bot.send_message(
-                            referrer_id,
-                            f"💸 <b>Реферальное начисление!</b>\n\n"
-                            f"Ваш реферал (ID: {user_tg_id}) пополнил баланс.\n"
-                            f"Вам начислено: <b>+{bonus:.2f}₽</b> ({level} уровень, {bonus*100/amount:.0f}%)\n\n"
-                            f"Реферальный баланс: используйте в профиле.",
-                            parse_mode="HTML"
-                        )
-                except Exception as e:
-                    logger.warning(f"Failed to notify referrer {referrer_id}: {e}")
-            
             # Обрабатываем платеж
             async with async_session_maker() as session:
-                success = await process_platega_payment(
+                # Парсим order_id: format "tokens_25_12345" или "tier_BASIC_12345"
+                parts = str(order_id).split("_")
+                
+                if len(parts) < 3:
+                    logger.error(f"Invalid order_id format: {order_id}")
+                    return web.json_response({"status": "error"}, status=400)
+                
+                item_type = parts[0]
+                item_id = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
+                user_telegram_id = int(parts[-1])
+                
+                # Находим пользователя
+                from database.models import User
+                from sqlalchemy import select
+                
+                res = await session.execute(select(User).where(User.telegram_id == user_telegram_id))
+                user = res.scalar_one_or_none()
+                
+                if not user:
+                    logger.error(f"User not found: {user_telegram_id}")
+                    return web.json_response({"status": "error"}, status=404)
+                
+                # Создаем транзакцию
+                from services.payments import create_pending_transaction, activate_subscription, activate_packet, SUBSCRIPTION_PLANS, PACKETS
+                from database.models import TransactionType, TransactionStatus, SubscriptionTier
+                
+                tx = await create_pending_transaction(
                     session=session,
-                    order_id=order_id,
-                    amount_rub=amount,
-                    notify_callback=notify_callback
+                    user_id=user.id,
+                    amount=amount,
+                    currency="RUB",
+                    tx_type=TransactionType.TOKEN_PURCHASE,
+                    payment_system="platega",
+                    extra_data={"item_type": item_type, "item_id": item_id},
                 )
                 
-                if success:
-                    # Находим пользователя для отправки уведомлений
-                    parts = str(order_id).split("_")
-                    if len(parts) >= 3:
-                        user_tg_id = int(parts[-1])
-                        item_type = parts[0]
-                        item_id = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
-                        
-                        # Получаем детали покупки
-                        from services.payments import get_purchase_details, PACKETS, SUBSCRIPTION_PLANS
-                        from database.models import SubscriptionTier
-                        
-                        details = get_purchase_details(item_type, item_id)
-                        
-                        # Уведомляем пользователя
-                        await notify_user_purchase(
-                            bot=self.bot,
-                            user_id=user_tg_id,
-                            tokens=details.get('tokens', 0),
-                            video=details.get('video', 0),
-                            amount_rub=float(amount),
-                            duration_days=details.get('duration_days', 0)
-                        )
-                        
-                        # Уведомляем админам
-                        from database.models import User
-                        from sqlalchemy import select
-                        
-                        res = await session.execute(select(User).where(User.telegram_id == user_tg_id))
-                        user = res.scalar_one_or_none()
-                        
-                        if user:
-                            # Получаем рефовода
-                            referrer_info = None
-                            if user.referrer_id:
-                                ref_res = await session.execute(
-                                    select(User).where(User.id == user.referrer_id)
-                                )
-                                referrer = ref_res.scalar_one_or_none()
-                                if referrer:
-                                    referrer_info = {
-                                        'id': referrer.telegram_id,
-                                        'username': referrer.username,
-                                        'bonus': amount * Decimal("0.15"),  # 15% первый уровень
-                                    }
-                            
-                            await notify_admin_payment(
-                                bot=self.bot,
-                                user_id=user_tg_id,
-                                username=user.username,
-                                tokens=details.get('tokens', 0),
-                                video=details.get('video', 0),
-                                amount_rub=float(amount),
-                                referrer_id=referrer_info['id'] if referrer_info else None,
-                                referrer_username=referrer_info['username'] if referrer_info else None,
-                                referrer_bonus=float(referrer_info['bonus']) if referrer_info else None,
-                            )
+                # Активируем товар
+                tokens_added = 0
+                video_added = 0
+                
+                if item_type == "tier":
+                    tier = SubscriptionTier(item_id.upper())
+                    plan = SUBSCRIPTION_PLANS[tier]
+                    tokens_added = plan["tokens"]
+                    await activate_subscription(session, user.id, tier)
                     
-                    return web.json_response({"status": "ok"})
+                elif item_type == "tokens":
+                    packet = PACKETS.get(item_id)
+                    if packet:
+                        tokens_added = packet.get("tokens", 0)
+                        await activate_packet(session, user.id, item_id)
+                        
+                elif item_type == "video":
+                    packet = PACKETS.get(item_id)
+                    if packet:
+                        video_added = packet.get("generations", 0)
+                        await activate_packet(session, user.id, item_id)
+                
+                # Обновляем транзакцию
+                tx.status = TransactionStatus.SUCCESS
+                tx.completed_at = datetime.utcnow()
+                await session.commit()
+                
+                # Обработка рефералов (15%/10%/5%)
+                from services.payments import get_referrer_chain, REF_LEVELS
+
+                chain = await get_referrer_chain(session, user.id)
+                total_ref_bonus = Decimal("0")
+
+                for ref_data in chain:
+                    referrer = ref_data['user']
+                    level = ref_data['level']
+                    bonus_percent = ref_data['bonus_percent']
+
+                    bonus = amount * Decimal(str(bonus_percent))
+                    total_ref_bonus += bonus
+
+                    # Начисляем бонус
+                    referrer.referral_balance += bonus
+
+                    # Уведомляем реферера
+                    try:
+                        await self.bot.send_message(
+                            referrer.telegram_id,
+                            f"💸 <b>Реферальное начисление!</b>\n\n"
+                            f"Ваш реферал (ID: {user_telegram_id}) пополнил баланс.\n"
+                            f"Вам начислено: <b>+{bonus:.2f}₽</b> ({level} уровень, {bonus_percent*100:.0f}%)\n\n"
+                            f"Реферальный баланс: {referrer.referral_balance}₽",
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to notify referrer {referrer.telegram_id}: {e}")
+
+                await session.commit()
+
+                # Уведомляем пользователя
+                items = []
+                if tokens_added > 0:
+                    items.append(f"🪙 {tokens_added} токенов")
+                if video_added > 0:
+                    items.append(f"🎬 {video_added} видео")
+
+                items_str = ", ".join(items) if items else "—"
+
+                duration_text = ""
+                if item_type == "tier":
+                    plan = SUBSCRIPTION_PLANS.get(SubscriptionTier(item_id.upper()))
+                    if plan and plan["days"] > 0:
+                        duration_text = f"\n⏳ Срок: <b>{plan['days']} дней</b>"
+
+                await self.bot.send_message(
+                    user_telegram_id,
+                    f"✅ <b>Оплата прошла успешно!</b>\n\n"
+                    f"💎 Начислено: <b>{items_str}</b>{duration_text}\n"
+                    f"💰 Сумма: <b>{amount:.2f} {currency}</b> (Platega)\n\n"
+                    f"Спасибо за покупку! 🎉",
+                    parse_mode="HTML"
+                )
+
+                # Уведомляем админам
+                from config import ADMIN_IDS
+
+                referrer_info = None
+                if user.referrer_id:
+                    ref_res = await session.execute(
+                        select(User).where(User.id == user.referrer_id)
+                    )
+                    referrer = ref_res.scalar_one_or_none()
+                    if referrer:
+                        referrer_info = {
+                            'id': referrer.telegram_id,
+                            'username': referrer.username,
+                            'bonus': amount * Decimal("0.15"),
+                        }
+
+                user_display = f" @{user.username}" if user.username else f"ID: {user_telegram_id}"
+                referrer_line = ""
+
+                if referrer_info:
+                    ref_link = f"@{referrer_info['username']}" if referrer_info['username'] else f"ID: {referrer_info['id']}"
+                    referrer_line = f"\n👥 Рефовод: {ref_link} (+{referrer_info['bonus']:.2f}₽)"
                 else:
-                    logger.error("Failed to process payment")
-                    return web.json_response({"status": "error"}, status=500)
+                    referrer_line = "\n👥 Рефовод: Нет"
+
+                admin_msg = (
+                    f"✅ Оплата: {amount:.2f} {currency}\n"
+                    f"Пользователь: {user_display}\n"
+                    f"Начислено: {items_str}{referrer_line}"
+                )
+
+                for admin_id in ADMIN_IDS:
+                    try:
+                        await self.bot.send_message(admin_id, admin_msg)
+                    except Exception as e:
+                        logger.warning(f"Failed to notify admin {admin_id}: {e}")
+
+                logger.info(
+                    f"✅ Platega payment: User {user_telegram_id} +{tokens_added} tokens, "
+                    f"+{video_added} video | Amount: {amount} RUB | "
+                    f"Ref bonus: {total_ref_bonus} RUB"
+                )
+
+                return web.json_response({"status": "ok"})
                     
         except json.JSONDecodeError:
             logger.error("Invalid JSON in webhook")

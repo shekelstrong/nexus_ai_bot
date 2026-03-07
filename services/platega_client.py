@@ -85,12 +85,3 @@ async def create_invoice(amount_rub: int, order_id: int, user_id: int, descripti
         except Exception as e:
             logger.error(f"❌ Platega Connection Error: {e}")
             return None
-
-
-async def verify_payment(order_id: int):
-    """
-    Проверка статуса платежа (опционально, если нужно)
-    """
-    # Platega не предоставляет публичного API для проверки статуса
-    # Статус приходит через вебхук
-    pass
