@@ -118,19 +118,31 @@ def models_list_menu(category: str, family: str):
 # --- ПОДПИСКИ ---
 def subscription_tiers_menu():
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💎 Premium", callback_data="tier:premium")],
-        [InlineKeyboardButton(text="💎 Premium X2", callback_data="tier:premium_x2")],
+        [InlineKeyboardButton(text="📦 BASIC (460 токенов)", callback_data="tier:basic")],
+        [InlineKeyboardButton(text="⭐ PRO (880 токенов)", callback_data="tier:pro")],
+        [InlineKeyboardButton(text="🏆 VIP (1700 токенов)", callback_data="tier:vip")],
+        [InlineKeyboardButton(text="💎 ELITE (2600 токенов)", callback_data="tier:elite")],
+        [InlineKeyboardButton(text="──────────────────", callback_data="divider")],
         [InlineKeyboardButton(text="🎬 Видео-пакеты", callback_data="packet:video")],
-        # Если аудио пакетов нет, кнопку можно скрыть или оставить заглушку
-        # [InlineKeyboardButton(text="🎵 Пакеты Suno", callback_data="packet:audio")],
+        [InlineKeyboardButton(text="🪙 Доп. токены", callback_data="packet:tokens")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
+    ])
+    return kb
+
+def token_package_menu():
+    """Меню выбора пакетов докупки токенов"""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🪙 25 токенов (390₽)", callback_data="buy_packet:tokens_25")],
+        [InlineKeyboardButton(text="🪙 50 токенов (590₽)", callback_data="buy_packet:tokens_50")],
+        [InlineKeyboardButton(text="🪙 100 токенов (1190₽)", callback_data="buy_packet:tokens_100")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="subscriptions")]
     ])
     return kb
 
 def video_packet_menu():
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎬 10 генераций (290₽)", callback_data="buy_packet:video_10")],
-        [InlineKeyboardButton(text="🎬 50 генераций (990₽)", callback_data="buy_packet:video_50")],
+        [InlineKeyboardButton(text="🎬 10 генераций (590₽)", callback_data="buy_packet:video_10")],
+        [InlineKeyboardButton(text="🎬 25 генераций (1190₽)", callback_data="buy_packet:video_25")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="subscriptions")]
     ])
     return kb

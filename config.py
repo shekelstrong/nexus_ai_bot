@@ -64,14 +64,30 @@ SSL_CERT_PATH = settings.SSL_CERT_PATH
 SSL_KEY_PATH = settings.SSL_KEY_PATH
 
 # --- ЛОГИЧЕСКИЕ КОНСТАНТЫ ---
-TARIFFS = {
-    "day": {"price": 100, "gens": 10, "name": "🚀 Тест-драйв (10 шт)"},
-    "week": {"price": 450, "gens": 50, "name": "📅 Неделька (50 шт)"},
-    "month": {"price": 1600, "gens": 200, "name": "🗓 Месяц (200 шт)"},
-    "month3": {"price": 7000, "gens": 1000, "name": "🔥 3 Месяца (1000 шт)"},
-    "month6": {"price": 18000, "gens": 3000, "name": "💎 Полгода (3000 шт)"},
-    "year": {"price": 50000, "gens": 10000, "name": "👑 Год PRO MAX (10000 шт)"}
+# Тарифные планы (токены начисляются на месяц)
+SUBSCRIPTION_TIERS = {
+    "FREE":   {"price": 0,     "tokens": 10,   "days": 0,  "name": "🆓 FREE (10 токенов/день)"},
+    "BASIC":  {"price": 790,   "tokens": 460,  "days": 30, "name": "📦 BASIC (460 токенов/месяц)"},
+    "PRO":    {"price": 1490,  "tokens": 880,  "days": 30, "name": "⭐ PRO (880 токенов/месяц)"},
+    "VIP":    {"price": 2490,  "tokens": 1700, "days": 30, "name": "🏆 VIP (1700 токенов/месяц)"},
+    "ELITE":  {"price": 3690,  "tokens": 2600, "days": 30, "name": "💎 ELITE (2600 токенов/месяц)"},
 }
+
+# Пакеты докупки токенов (бессрочные)
+TOKEN_PACKAGES = {
+    "tokens_25":  {"price": 390,  "tokens": 25,   "name": "🪙 25 токенов"},
+    "tokens_50":  {"price": 590,  "tokens": 50,   "name": "🪙 50 токенов"},
+    "tokens_100": {"price": 1190, "tokens": 100,  "name": "🪙 100 токенов"},
+}
+
+# Видео-пакеты (отдельная валюта - генерации видео)
+VIDEO_PACKAGES = {
+    "video_10":  {"price": 590,  "generations": 10, "name": "🎬 10 видео"},
+    "video_25":  {"price": 1190, "generations": 25, "name": "🎬 25 видео"},
+}
+
+# Старые тарифы (для совместимости, будут удалены позже)
+TARIFFS = SUBSCRIPTION_TIERS
 
 REF_LEVELS = [0.15, 0.10, 0.05]
 

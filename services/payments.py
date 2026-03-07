@@ -22,27 +22,30 @@ from database.models import (
 )
 from utils.logger import logger
 
+# Импортируем конфигурацию тарифов и пакетов
+from config import SUBSCRIPTION_TIERS, TOKEN_PACKAGES, VIDEO_PACKAGES
 
-# Настраиваем планы по ТЗ
-# Лимиты переводим в месячный запас токенов (из расчета 1 запрос = 1 токен)
-# FREE: 10 в день (обрабатывается отдельно в scheduler)
-# PREMIUM: 50 в день * 30 дней = 1500 токенов
-# PREMIUM_X2: 100 в день * 30 дней = 3000 токенов
+
+# Настраиваем планы согласно ТЗ
+# FREE: 10 токенов в день (сбрасываются ежедневно в scheduler)
+# Платные тарифы: токены начисляются на месяц
 
 SUBSCRIPTION_PLANS = {
-    SubscriptionTier.FREE:        {"price_rub": 0,    "tokens": 10,   "days": 0},
-    SubscriptionTier.PREMIUM:     {"price_rub": 690,  "tokens": 1500, "days": 30},
-    SubscriptionTier.PREMIUM_X2:  {"price_rub": 1090, "tokens": 3000, "days": 30},
+    SubscriptionTier.FREE:   {"price_rub": 0,    "tokens": 10,   "days": 0},
+    SubscriptionTier.BASIC:  {"price_rub": 790,  "tokens": 460,  "days": 30},
+    SubscriptionTier.PRO:    {"price_rub": 1490, "tokens": 880,  "days": 30},
+    SubscriptionTier.VIP:    {"price_rub": 2490, "tokens": 1700, "days": 30},
+    SubscriptionTier.ELITE:  {"price_rub": 3690, "tokens": 2600, "days": 30},
 }
 
-# Пакеты (не являются подпиской, просто покупка токенов/генераций)
-# Цены и количество токенов для пакетов (ID пакета -> {цена, токены})
-# Предполагаем, что Video стоит 2 токена, Suno стоит 1 токен (по конфигу)
+# Пакеты докупки токенов (бессрочные)
 PACKETS = {
-    "video_10":  {"price_rub": 290,  "tokens": 20,  "name": "Видео (10 ген)"},  # 10 * 2 = 20
-    "video_50":  {"price_rub": 1290, "tokens": 100, "name": "Видео (50 ген)"}, # 50 * 2 = 100 (цена примерная!)
-    "audio_20":  {"price_rub": 390,  "tokens": 20,  "name": "Suno (20 ген)"},  # 20 * 1 = 20
-    "audio_100": {"price_rub": 1590, "tokens": 100, "name": "Suno (100 ген)"}, # 100 * 1 = 100 (цена примерная!)
+    "tokens_25":  {"price_rub": 390,  "tokens": 25,   "type": "tokens", "name": "🪙 25 токенов"},
+    "tokens_50":  {"price_rub": 590,  "tokens": 50,   "type": "tokens", "name": "🪙 50 токенов"},
+    "tokens_100": {"price_rub": 1190, "tokens": 100,  "type": "tokens", "name": "🪙 100 токенов"},
+    # Видео-пакеты (отдельный тип)
+    "video_10":  {"price_rub": 590,  "generations": 10, "type": "video", "name": "🎬 10 видео"},
+    "video_25":  {"price_rub": 1190, "generations": 25, "type": "video", "name": "🎬 25 видео"},
 }
 
 
@@ -81,8 +84,7 @@ async def activate_subscription(
     res = await session.execute(select(User).where(User.id == user_id).with_for_update())
     user = res.scalar_one()
 
-
-    # tier + срок
+    # Устанавливаем tier и срок действия
     user.subscription_tier = tier.value
     if plan["days"] > 0:
         now = datetime.utcnow()
@@ -91,13 +93,12 @@ async def activate_subscription(
         else:
             user.subscription_expires_at = now + timedelta(days=plan["days"])
 
-
     # Начисляем токены за подписку
     user.tokens_balance += int(plan["tokens"])
-    # Ставим флаг премиума
-    if tier in [SubscriptionTier.PREMIUM, SubscriptionTier.PREMIUM_X2]:
-        user.is_premium = True
-
+    
+    # Для FREE тарифа ставим флаг is_premium = False
+    # Для платных тарифов ставим is_premium = True
+    user.is_premium = tier != SubscriptionTier.FREE
 
     await session.commit()
 
@@ -107,15 +108,22 @@ async def activate_packet(
     user_id: int,
     packet_id: str,
 ) -> None:
-    """Активация разового пакета"""
+    """Активация разового пакета (токены или видео)"""
     packet = PACKETS.get(packet_id)
     if not packet:
+        logger.error(f"Packet not found: {packet_id}")
         return
 
     res = await session.execute(select(User).where(User.id == user_id).with_for_update())
     user = res.scalar_one()
+
+    # В зависимости от типа пакета начисляем токены или видео-генерации
+    if packet.get("type") == "video":
+        user.video_generations_balance += int(packet.get("generations", 0))
+    else:
+        # По умолчанию считаем что это токены
+        user.tokens_balance += int(packet.get("tokens", 0))
     
-    user.tokens_balance += int(packet["tokens"])
     await session.commit()
 
 
@@ -159,8 +167,8 @@ async def send_stars_invoice(
     session: AsyncSession,
     chat_id: int,
     telegram_user_id: int,
-    item_type: str, # 'tier' or 'packet'
-    item_id: str,   # 'PREMIUM' or 'video_10'
+    item_type: str, # 'tier', 'tokens', or 'video'
+    item_id: str,   # 'BASIC' or 'tokens_25' or 'video_10'
 ) -> Message:
     res = await session.execute(select(User).where(User.telegram_id == telegram_user_id))
     user = res.scalar_one_or_none()
@@ -171,39 +179,60 @@ async def send_stars_invoice(
     title = ""
     description = ""
     tokens = 0
-    
+    video_gens = 0
+
     if item_type == "tier":
         tier = SubscriptionTier(item_id)
         plan = SUBSCRIPTION_PLANS[tier]
         price_rub = plan["price_rub"]
         title = f"Подписка {tier.value}"
         tokens = plan["tokens"]
-        description = f"Лимит ~{int(tokens/30)} запросов/день.\nСрок: 30 дней."
-        
-    elif item_type == "packet":
+        daily_tokens = tokens // 30 if tokens > 0 else 0
+        description = f"Лимит ~{daily_tokens} токенов/день.\nСрок: 30 дней."
+
+    elif item_type == "tokens":
         packet = PACKETS.get(item_id)
         if not packet:
-            raise ValueError("Пакет не найден")
+            raise ValueError("Пакет токенов не найден")
         price_rub = packet["price_rub"]
         title = packet["name"]
-        tokens = packet["tokens"]
+        tokens = packet.get("tokens", 0)
         description = f"Дополнительные {tokens} токенов (бессрочно)."
 
-    stars_amount = int(price_rub) # 1 RUB = 1 XTR (пока так)
-    if stars_amount <= 0:
+    elif item_type == "video":
+        packet = PACKETS.get(item_id)
+        if not packet:
+            raise ValueError("Видео-пакет не найден")
+        price_rub = packet["price_rub"]
+        title = packet["name"]
+        video_gens = packet.get("generations", 0)
+        description = f"Дополнительные {video_gens} генераций видео (бессрочно)."
+
+    else:
+        raise ValueError(f"Неизвестный тип оплаты: {item_type}")
+
+    stars_amount = int(price_rub) # 1 RUB = 1 XTR
+    if stars_amount <= 0 and item_type != "tier":
         raise ValueError("Цена должна быть > 0")
 
+    tx_type = TransactionType.SUBSCRIPTION if item_type == "tier" else TransactionType.TOKEN_PURCHASE
+    
     tx = await create_pending_transaction(
         session=session,
         user_id=user.id,
         amount=Decimal(price_rub),
         currency="XTR",
-        tx_type=TransactionType.SUBSCRIPTION if item_type == "tier" else TransactionType.TOKEN_PURCHASE,
+        tx_type=tx_type,
         payment_system="stars",
-        extra_data={"item_type": item_type, "item_id": item_id, "tokens": tokens},
+        extra_data={
+            "item_type": item_type,
+            "item_id": item_id,
+            "tokens": tokens,
+            "video_generations": video_gens
+        },
     )
 
-    prices = [LabeledPrice(label=title, amount=stars_amount)]
+    prices = [LabeledPrice(label=title, amount=stars_amount)] if stars_amount > 0 else [LabeledPrice(label=title, amount=1)]
 
     return await bot.send_invoice(
         chat_id=chat_id,
@@ -244,10 +273,12 @@ async def handle_successful_payment(
 
     item_type = tx.extra_data.get("item_type")
     item_id = tx.extra_data.get("item_id")
-    
+
     if item_type == "tier":
         await activate_subscription(session, tx.user_id, SubscriptionTier(item_id))
-    elif item_type == "packet":
+    elif item_type == "tokens":
+        await activate_packet(session, tx.user_id, item_id)
+    elif item_type == "video":
         await activate_packet(session, tx.user_id, item_id)
 
     await process_referral_rewards(session, tx.user_id, Decimal(tx.amount))

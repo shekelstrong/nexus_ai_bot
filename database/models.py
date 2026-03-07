@@ -26,8 +26,10 @@ class Base(DeclarativeBase):
 
 class SubscriptionTier(str, PyEnum):
     FREE = "FREE"
-    PREMIUM = "PREMIUM"
-    PREMIUM_X2 = "PREMIUM_X2"
+    BASIC = "BASIC"
+    PRO = "PRO"
+    VIP = "VIP"
+    ELITE = "ELITE"
 
 
 class GenerationCategory(str, PyEnum):
@@ -76,6 +78,7 @@ class User(Base):
 
     tokens_balance: Mapped[int] = mapped_column(Integer, default=10)
     referral_balance: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    video_generations_balance: Mapped[int] = mapped_column(Integer, default=0)
 
     subscription_tier: Mapped[str] = mapped_column(String(32), default=SubscriptionTier.FREE.value)
     subscription_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

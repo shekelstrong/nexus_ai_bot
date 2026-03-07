@@ -8,7 +8,7 @@ from keyboards.inline import (
     subscription_tiers_menu,
     payment_methods_menu,
     video_packet_menu,
-    audio_packet_menu,
+    token_package_menu,
 )
 from services.payments import (
     SUBSCRIPTION_PLANS,
@@ -30,10 +30,16 @@ async def show_subscriptions(cb: CallbackQuery):
     """
     text = (
         "💎 <b>Тарифные планы NexusAI</b>\n\n"
-        "Выберите интересующий вас план или пакет, чтобы узнать подробности и условия:\n\n"
-        "👇 <b>Нажмите на кнопку ниже:</b>"
+        "📋 <b>Подписки (ежемесячно):</b>\n"
+        "• BASIC: 460 токенов/месяц\n"
+        "• PRO: 880 токенов/месяц\n"
+        "• VIP: 1700 токенов/месяц\n"
+        "• ELITE: 2600 токенов/месяц\n\n"
+        "🛒 <b>Пакеты (бессрочно):</b>\n"
+        "• Токены: 25/50/100\n"
+        "• Видео: 10/25 генераций\n\n"
+        "👇 <b>Выберите раздел:</b>"
     )
-
 
     await cb.message.edit_text(
         text,
@@ -50,51 +56,26 @@ async def tier_selected(cb: CallbackQuery):
     """
     tier_name = cb.data.split("_", 1)[1] if cb.data.startswith("tier_") else cb.data.split(":", 1)[1]
     try:
-        tier = SubscriptionTier(tier_name)
+        tier = SubscriptionTier(tier_name.upper())
     except ValueError:
         await cb.answer("Некорректный тариф", show_alert=True)
         return
 
-
-    if tier == SubscriptionTier.PREMIUM:
-        # Описание для ПРЕМИУМ
-        plan = SUBSCRIPTION_PLANS[SubscriptionTier.PREMIUM]
-        text = (
-            "💎 <b>ПРЕМИУМ | МЕСЯЦ</b>\n\n"
-            "🔼 <b>Лимит запросов:</b> 50 в день\n\n"
-            "✅ <b>Доступные возможности:</b>\n"
-            "• GPT-5 mini | GPT-4o mini\n"
-            "• DeepSeek-V3.2 | Gemini 3 Flash\n"
-            "• Интернет-поиск Perplexity\n"
-            "• Распознавание изображений\n"
-            "• 25 генераций изображений\n\n"
-            "🚀 <b>Расширенные модели:</b>\n"
-            "• GPT-5.2 | GPT-4.1 | OpenAI o3\n"
-            "• Gemini 3 Pro | Claude 4.5\n"
-            "• Работа с документами\n"
-            "• Голосовые ответы\n\n"
-            f"💰 <b>Стоимость: {plan['price_rub']} ₽</b>"
-        )
-        amount = plan["price_rub"]
-        
-    elif tier == SubscriptionTier.PREMIUM_X2:
-        # Описание для ПРЕМИУМ X2
-        plan = SUBSCRIPTION_PLANS[SubscriptionTier.PREMIUM_X2]
-        text = (
-            "💎 <b>ПРЕМИУМ X2 | МЕСЯЦ</b>\n\n"
-            "⏫ <b>Лимит запросов:</b> 100 в день\n\n"
-            "✅ <b>Включает все опции тарифа «Премиум»:</b>\n"
-            "• Топовые нейросети (GPT-5, Claude 4.5, и др.)\n"
-            "• Интернет-поиск и работа с документами\n"
-            "• Генерация изображений и голосовые ответы\n\n"
-            f"💰 <b>Стоимость: {plan['price_rub']} ₽</b>"
-        )
-        amount = plan["price_rub"]
-        
-    else:
-        await cb.answer("Описание для этого тарифа не готово", show_alert=True)
-        return
-
+    plan = SUBSCRIPTION_PLANS[tier]
+    daily_tokens = plan["tokens"] // 30 if plan["tokens"] > 0 else 0
+    
+    text = (
+        f"💎 <b>{tier.value} | МЕСЯЦ</b>\n\n"
+        f"📦 <b>Токены:</b> {plan['tokens']} ({daily_tokens} в день)\n"
+        f"⏳ <b>Срок:</b> 30 дней\n\n"
+        f"✅ <b>Возможности:</b>\n"
+        f"• Доступ ко всем текстовым моделям\n"
+        f"• Генерация изображений с референсами\n"
+        f"• Поиск в интернете (Perplexity)\n"
+        f"• Работа с документами\n\n"
+        f"💰 <b>Стоимость: {plan['price_rub']} ₽</b>"
+    )
+    amount = plan["price_rub"]
 
     await cb.message.edit_text(
         text,
@@ -108,14 +89,15 @@ async def tier_selected(cb: CallbackQuery):
 async def packet_video_selected(cb: CallbackQuery):
     """Меню выбора видео-пакета"""
     text = (
-        "🎬 <b>ВИДЕО | ПАКЕТ</b>\n\n"
-        "От 10 до 50 генераций (на выбор)\n\n"
-        "✅ <b>Модели:</b>\n"
-        "• Veo 3.1 | Sora 2 | Kling | Hailuo | Pika\n\n"
+        "🎬 <b>ВИДЕО-ПАКЕТЫ</b>\n\n"
+        "Генерация видео на нейросетях:\n"
+        "• Kling AI\n"
+        "• Google Veo 3.1\n"
+        "• Wan Video\n\n"
         "✨ <b>Возможности:</b>\n"
-        "• Видео на основе изображений\n"
-        "• Креативные видео-эффекты\n\n"
-        "💰 <b>Стоимость:</b> от 290 ₽ (10 генераций) до 990 ₽ (50 генераций)\n\n"
+        "• Text-to-Video\n"
+        "• Image-to-Video\n"
+        "• Motion Control\n\n"
         "👇 <b>Выберите размер пакета:</b>"
     )
     await cb.message.edit_text(
@@ -126,69 +108,46 @@ async def packet_video_selected(cb: CallbackQuery):
     await cb.answer()
 
 
-@router.callback_query((F.data == "packet_audio") | (F.data == "packet:audio"))
-async def packet_audio_selected(cb: CallbackQuery):
-    """Меню выбора аудио-пакета"""
+@router.callback_query((F.data == "packet_tokens") | (F.data == "packet:tokens"))
+async def packet_tokens_selected(cb: CallbackQuery):
+    """Меню выбора пакета токенов"""
     text = (
-        "🎸 <b>ПЕСНИ SUNO | ПАКЕТ</b>\n\n"
-        "От 20 до 100 генераций (на выбор)\n\n"
-        "✅ <b>Модель:</b> Suno V5\n"
-        "✨ <b>Возможности:</b>\n"
-        "• Свои стихи или генерация текста с AI\n"
-        "• Создание полных треков\n\n"
-        "💰 <b>Стоимость:</b> от 390 ₽ (20 генераций) до 990 ₽ (100 генераций)\n\n"
+        "🪙 <b>ПАКЕТЫ ТОКЕНОВ</b>\n\n"
+        "Дополнительные токены для генерации:\n"
+        "• Текст: 1-20 токенов за запрос\n"
+        "• Изображения: 1-8 токенов за генерацию\n"
+        "• Поиск: 1-6 токенов за запрос\n\n"
+        "⏳ <b>Токены не сгорают!</b>\n\n"
         "👇 <b>Выберите размер пакета:</b>"
     )
     await cb.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=audio_packet_menu(),
+        reply_markup=token_package_menu(),
     )
     await cb.answer()
 
 
-@router.callback_query((F.data.startswith("buy_video_")) | (F.data.startswith("buy_packet:video_")))
-async def buy_video_packet(cb: CallbackQuery):
-    if cb.data.startswith("buy_video_"):
-        packet_id = "video_" + cb.data.split("_", 2)[2]
-    else:
-        packet_id = cb.data.split(":", 1)[1]
+@router.callback_query(F.data.startswith("buy_packet:"))
+async def buy_packet_handler(cb: CallbackQuery):
+    packet_id = cb.data.split(":", 1)[1]
     packet = PACKETS.get(packet_id)
     if not packet:
         await cb.answer("Пакет не найден", show_alert=True)
         return
 
-
     amount = packet["price_rub"]
+    packet_type = packet.get("type", "tokens")
+    
+    # Определяем тип для оплаты
+    pay_type = "video" if packet_type == "video" else "tokens"
+    
     await cb.message.edit_text(
-        f"🎬 Вы выбрали: <b>{packet['name']}</b>\n"
+        f"✅ Вы выбрали: <b>{packet['name']}</b>\n"
         f"💰 К оплате: <b>{amount} ₽</b>\n\n"
         "Выберите способ оплаты:",
         parse_mode="HTML",
-        reply_markup=payment_methods_menu(f"packet_{packet_id}", amount),
-    )
-    await cb.answer()
-
-
-@router.callback_query((F.data.startswith("buy_audio_")) | (F.data.startswith("buy_packet:audio_")))
-async def buy_audio_packet(cb: CallbackQuery):
-    if cb.data.startswith("buy_audio_"):
-        packet_id = "audio_" + cb.data.split("_", 2)[2]
-    else:
-        packet_id = cb.data.split(":", 1)[1]
-    packet = PACKETS.get(packet_id)
-    if not packet:
-        await cb.answer("Пакет не найден", show_alert=True)
-        return
-
-
-    amount = packet["price_rub"]
-    await cb.message.edit_text(
-        f"🎸 Вы выбрали: <b>{packet['name']}</b>\n"
-        f"💰 К оплате: <b>{amount} ₽</b>\n\n"
-        "Выберите способ оплаты:",
-        parse_mode="HTML",
-        reply_markup=payment_methods_menu(f"packet_{packet_id}", amount),
+        reply_markup=payment_methods_menu(f"packet_{pay_type}_{packet_id}", amount),
     )
     await cb.answer()
 
@@ -209,6 +168,7 @@ async def pay_stars(cb: CallbackQuery, session: AsyncSession):
             return
         kind = parts[2]
         item_token = parts[3:]
+    
     try:
         if kind == "tier":
             tier_name = item_token[0] if item_token else ""
@@ -221,22 +181,25 @@ async def pay_stars(cb: CallbackQuery, session: AsyncSession):
                 item_id=tier_name,
             )
         elif kind == "packet":
-            if cb.data.startswith("pay_stars_"):
-                packet_id = item_token[0] + "_" + item_token[1]
+            # Формат: packet_tokens_tokens_25 или packet_video_video_10
+            if len(item_token) >= 3:
+                packet_type = item_token[0]  # tokens или video
+                packet_id = item_token[1] + "_" + item_token[2] if len(item_token) > 2 else item_token[1]
             else:
                 packet_id = item_token[0] if item_token else ""
+                packet_type = "tokens"
+            
             await send_stars_invoice(
                 bot=cb.bot,
                 session=session,
                 chat_id=cb.message.chat.id,
                 telegram_user_id=cb.from_user.id,
-                item_type="packet",
+                item_type=packet_type,
                 item_id=packet_id,
             )
         else:
             await cb.answer("Неизвестный тип оплаты", show_alert=True)
             return
-
 
         await cb.answer("Инвойс отправлен ⭐")
     except Exception as e:

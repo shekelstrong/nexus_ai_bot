@@ -283,6 +283,10 @@ async def run_complex_generation(
     second_image_file_id: str = None,
     prompt: str = None,
 ):
+    """
+    Сложная генерация видео (Motion Control, First-Last Frame).
+    Использует видео-пакеты вместо токенов.
+    """
     user_id = message.from_user.id
     result = await session.execute(select(User).where(User.telegram_id == user_id))
     user = result.scalar_one_or_none()
@@ -291,11 +295,17 @@ async def run_complex_generation(
     model_info = ALL_MODELS.get(model_id, {"cost": 0, "name": "Unknown"})
     cost = model_info.get("cost", 0)
 
-    if user.tokens_balance < cost:
-        await message.answer(f"❌ Недостаточно бананов! Нужно {cost}.", parse_mode="HTML")
+    # Проверяем баланс видео-генераций (1 генерация = 1 видео)
+    if user.video_generations_balance < 1:
+        await message.answer(
+            "❌ <b>Недостаточно видео-генераций!</b>\n\n"
+            "Приобретите пакет видео-генераций в разделе 💎 Подписка.",
+            parse_mode="HTML"
+        )
         return
 
-    user.tokens_balance -= cost
+    # Списываем 1 видео-генерацию
+    user.video_generations_balance -= 1
     await session.commit()
 
     status_msg = await message.answer(
@@ -355,7 +365,7 @@ async def run_complex_generation(
         tmp_path = await download_to_tempfile(res_url)
 
         sent_video_ok = False
-        
+
         # 1. Отправляем как ВИДЕО (красиво, для просмотра)
         if tmp_path and os.path.exists(tmp_path):
             try:
@@ -363,7 +373,7 @@ async def run_complex_generation(
                 input_file_video = FSInputFile(tmp_path, filename="video.mp4")
                 await message.answer_video(
                     input_file_video,
-                    caption=f"🎬 <b>{model_info['name']}</b>\n🍌 -{cost}",
+                    caption=f"🎬 <b>{model_info['name']}</b>\n🎬 -1 генерация",
                     parse_mode="HTML",
                     reply_markup=back_to_menu_kb(),
                     supports_streaming=True
@@ -378,7 +388,7 @@ async def run_complex_generation(
             try:
                 await message.answer_video(
                     res_url,
-                    caption=f"🎬 <b>{model_info['name']}</b>\n🍌 -{cost}",
+                    caption=f"🎬 <b>{model_info['name']}</b>\n🎬 -1 генерация",
                     parse_mode="HTML",
                     reply_markup=back_to_menu_kb(),
                 )
@@ -405,7 +415,7 @@ async def run_complex_generation(
              await message.answer(
                 f"✅ <b>Видео готово!</b>\n\n"
                 f"🎬 Модель: <b>{model_info['name']}</b>\n"
-                f"🍌 Стоимость: -{cost}\n\n"
+                f"🎬 -1 генерация\n\n"
                 f"⚠️ Не удалось загрузить видео в Telegram, вот прямая ссылка:\n"
                 f"🔗 <a href='{res_url}'>Скачать видео</a>",
                 parse_mode="HTML",
@@ -425,14 +435,15 @@ async def run_complex_generation(
                 prompt=prompt,
                 result="OK",
                 status=GenerationStatus.COMPLETED,
-                cost=cost,
+                cost=1,  # 1 видео-генерация
             )
         )
         await session.commit()
 
     except Exception as e:
         logger.error(f"Complex Gen Error: {e}")
-        user.tokens_balance += cost
+        # Возвращаем видео-генерацию при ошибке
+        user.video_generations_balance += 1
         await session.commit()
         try:
             await status_msg.edit_text(f"❌ Ошибка: {str(e)}")
@@ -567,11 +578,27 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
     cost = model_info.get("cost", 1)
     prompt = message.caption or message.text or ""
 
-    if user.tokens_balance < cost:
-        await message.answer(f"❌ Недостаточно бананов! Нужно {cost}.", parse_mode="HTML")
-        return
-
-    user.tokens_balance -= cost
+    # Для видео используем отдельный баланс видео-генераций
+    if category == "gen_video":
+        if user.video_generations_balance < 1:
+            await message.answer(
+                "❌ <b>Недостаточно видео-генераций!</b>\n\n"
+                "Приобретите пакет видео-генераций в разделе 💎 Подписка.",
+                parse_mode="HTML"
+            )
+            return
+        
+        # Списываем 1 видео-генерацию
+        user.video_generations_balance -= 1
+    else:
+        # Для остальных категорий (текст, изображения, поиск) используем токены
+        if user.tokens_balance < cost:
+            await message.answer(f"❌ Недостаточно токенов! Нужно {cost}.", parse_mode="HTML")
+            return
+        
+        # Списываем токены
+        user.tokens_balance -= cost
+    
     await session.commit()
 
     status_msg = await message.answer(f"⏳ <b>{model_info['name']}</b>\nДумаю...", parse_mode="HTML")
@@ -589,14 +616,10 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             if not res:
                 raise Exception("Ошибка видео")
 
-            # Для простых видео тоже можно добавить логику скачивания, но пока оставим URL для скорости,
-            # или можно адаптировать ту же логику, что в Complex Gen, если нужно.
-            # Пока оставим как было, чтобы не усложнять.
-
             await status_msg.delete()
             await message.answer_video(
                 normalize_url(res),
-                caption=f"🎬 <b>{model_info['name']}</b>\n🍌 -{cost}",
+                caption=f"🎬 <b>{model_info['name']}</b>\n🎬 -1 генерация",
                 parse_mode="HTML",
                 reply_markup=back_to_menu_kb(),
             )
@@ -654,7 +677,11 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
 
     except Exception as e:
         logger.error(f"Simple Gen Error: {e}")
-        user.tokens_balance += cost
+        # Возвращаем ресурсы при ошибке
+        if category == "gen_video":
+            user.video_generations_balance += 1
+        else:
+            user.tokens_balance += cost
         await session.commit()
         # Пробуем редактировать статусное сообщение, но если не выйдет — шлём новое
         try:
