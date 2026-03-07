@@ -1,22 +1,21 @@
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message, PreCheckoutQuery
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
-
 
 from database.models import SubscriptionTier
 from keyboards.inline import (
     subscription_tiers_menu,
-    payment_methods_menu,
     video_packet_menu,
     token_package_menu,
 )
+from services.platega_client import create_invoice
 from services.payments import (
     SUBSCRIPTION_PLANS,
     PACKETS,
-    send_stars_invoice,
-    handle_pre_checkout,
-    handle_successful_payment,
+    process_platega_payment,
+    get_purchase_details,
 )
+from handlers.admin.notifications import notify_admin_payment, notify_user_purchase
 from utils.logger import logger
 
 
@@ -50,9 +49,9 @@ async def show_subscriptions(cb: CallbackQuery):
 
 
 @router.callback_query((F.data.startswith("tier_")) | (F.data.startswith("tier:")))
-async def tier_selected(cb: CallbackQuery):
+async def tier_selected(cb: CallbackQuery, session: AsyncSession):
     """
-    Показываем подробное описание выбранного тарифа.
+    Показываем подробное описание выбранного тарифа и создаем платеж.
     """
     tier_name = cb.data.split("_", 1)[1] if cb.data.startswith("tier_") else cb.data.split(":", 1)[1]
     try:
@@ -75,12 +74,31 @@ async def tier_selected(cb: CallbackQuery):
         f"• Работа с документами\n\n"
         f"💰 <b>Стоимость: {plan['price_rub']} ₽</b>"
     )
-    amount = plan["price_rub"]
+    
+    # Создаем платеж Platega
+    order_id = f"tier_{tier_name}_{cb.from_user.id}"
+    invoice_url = await create_invoice(
+        amount_rub=plan["price_rub"],
+        order_id=order_id,
+        user_id=cb.from_user.id,
+        description=f"Subscription {tier.value}"
+    )
+    
+    if not invoice_url:
+        await cb.answer("Ошибка создания платежа", show_alert=True)
+        return
+
+    # Клавиатура с оплатой
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить картой", url=invoice_url)],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="subscriptions")]
+    ])
 
     await cb.message.edit_text(
-        text,
+        text + "\n\n👇 <b>Нажмите кнопку для оплаты:</b>",
         parse_mode="HTML",
-        reply_markup=payment_methods_menu(f"tier_{tier.value}", amount),
+        reply_markup=kb,
     )
     await cb.answer()
 
@@ -129,7 +147,7 @@ async def packet_tokens_selected(cb: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("buy_packet:"))
-async def buy_packet_handler(cb: CallbackQuery):
+async def buy_packet_handler(cb: CallbackQuery, session: AsyncSession):
     packet_id = cb.data.split(":", 1)[1]
     packet = PACKETS.get(packet_id)
     if not packet:
@@ -142,98 +160,88 @@ async def buy_packet_handler(cb: CallbackQuery):
     # Определяем тип для оплаты
     pay_type = "video" if packet_type == "video" else "tokens"
     
+    # Создаем платеж Platega
+    order_id = f"{pay_type}_{packet_id}_{cb.from_user.id}"
+    invoice_url = await create_invoice(
+        amount_rub=amount,
+        order_id=order_id,
+        user_id=cb.from_user.id,
+        description=f"Packet {packet['name']}"
+    )
+    
+    if not invoice_url:
+        await cb.answer("Ошибка создания платежа", show_alert=True)
+        return
+
+    # Клавиатура с оплатой
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить картой", url=invoice_url)],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="subscriptions")]
+    ])
+
     await cb.message.edit_text(
         f"✅ Вы выбрали: <b>{packet['name']}</b>\n"
         f"💰 К оплате: <b>{amount} ₽</b>\n\n"
-        "Выберите способ оплаты:",
+        f"👇 <b>Нажмите кнопку для оплаты:</b>",
         parse_mode="HTML",
-        reply_markup=payment_methods_menu(f"packet_{pay_type}_{packet_id}", amount),
+        reply_markup=kb,
     )
     await cb.answer()
 
 
-@router.callback_query((F.data.startswith("pay_stars_")) | (F.data.startswith("pay:stars:")))
-async def pay_stars(cb: CallbackQuery, session: AsyncSession):
-    if cb.data.startswith("pay_stars_"):
-        parts = cb.data.split("_")
-        if len(parts) < 4:
-            await cb.answer("Ошибка формата", show_alert=True)
-            return
-        kind = parts[2]
-        item_token = parts[3:]
-    else:
-        parts = cb.data.split(":")
-        if len(parts) < 3:
-            await cb.answer("Ошибка формата", show_alert=True)
-            return
-        kind = parts[2]
-        item_token = parts[3:]
+@router.callback_query(F.data.startswith("pay_success:"))
+async def pay_success_handler(cb: CallbackQuery, session: AsyncSession):
+    """
+    Обработчик успешной оплаты (вызывается после возврата из Platega).
+    Формат: pay_success:{order_id}
+    """
+    order_id = cb.data.split(":", 1)[1]
     
-    try:
-        if kind == "tier":
-            tier_name = item_token[0] if item_token else ""
-            await send_stars_invoice(
-                bot=cb.bot,
-                session=session,
-                chat_id=cb.message.chat.id,
-                telegram_user_id=cb.from_user.id,
-                item_type="tier",
-                item_id=tier_name,
-            )
-        elif kind == "packet":
-            # Формат: packet_tokens_tokens_25 или packet_video_video_10
-            if len(item_token) >= 3:
-                packet_type = item_token[0]  # tokens или video
-                packet_id = item_token[1] + "_" + item_token[2] if len(item_token) > 2 else item_token[1]
-            else:
-                packet_id = item_token[0] if item_token else ""
-                packet_type = "tokens"
-            
-            await send_stars_invoice(
-                bot=cb.bot,
-                session=session,
-                chat_id=cb.message.chat.id,
-                telegram_user_id=cb.from_user.id,
-                item_type=packet_type,
-                item_id=packet_id,
-            )
+    # Парсим order_id
+    parts = order_id.split("_")
+    if len(parts) < 3:
+        await cb.answer("Ошибка обработки платежа", show_alert=True)
+        return
+    
+    item_type = parts[0]
+    item_id = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
+    
+    # Получаем детали покупки
+    details = get_purchase_details(item_type, item_id)
+    
+    text = (
+        f"✅ <b>Оплата прошла успешно!</b>\n\n"
+        f"💎 Начислено:\n"
+    )
+    
+    if details['tokens'] > 0:
+        if details['duration_days'] > 0:
+            daily = details['tokens'] // details['duration_days']
+            text += f"🪙 <b>{details['tokens']} токенов</b> ({daily} в день)\n"
         else:
-            await cb.answer("Неизвестный тип оплаты", show_alert=True)
-            return
-
-        await cb.answer("Инвойс отправлен ⭐")
-    except Exception as e:
-        logger.exception("Failed to send Stars invoice")
-        await cb.answer(f"Ошибка: {e}", show_alert=True)
-
-
-@router.callback_query(F.data.startswith("pay_crypto_"))
-async def pay_crypto(cb: CallbackQuery):
-    await cb.answer("В разработке...", show_alert=True)
-
-
-@router.callback_query(F.data.startswith("pay_fiat_"))
-async def pay_fiat(cb: CallbackQuery):
-    await cb.answer("В разработке...", show_alert=True)
+            text += f"🪙 <b>{details['tokens']} токенов</b> (бессрочно)\n"
+    
+    if details['video'] > 0:
+        text += f"🎬 <b>{details['video']} видео</b> (бессрочно)\n"
+    
+    if details['duration_days'] > 0:
+        text += f"\n⏳ Срок: <b>{details['duration_days']} дней</b>"
+    
+    text += "\n\nСпасибо за покупку! 🎉"
+    
+    await cb.message.answer(text, parse_mode="HTML")
+    await cb.answer()
 
 
-@router.pre_checkout_query()
-async def pre_checkout_handler(pre_checkout: PreCheckoutQuery):
-    await handle_pre_checkout(pre_checkout, pre_checkout.bot)
-
-
-@router.message(F.successful_payment)
-async def successful_payment_handler(message: Message, session: AsyncSession):
-    payment = message.successful_payment
-    await handle_successful_payment(
-        session=session,
-        telegram_user_id=message.from_user.id,
-        payload=payment.invoice_payload,
-        total_amount=payment.total_amount,
-        currency=payment.currency,
+@router.callback_query(F.data.startswith("pay_failed:"))
+async def pay_failed_handler(cb: CallbackQuery):
+    """
+    Обработчик неудачной оплаты.
+    """
+    await cb.message.answer(
+        "❌ <b>Оплата не прошла</b>\n\n"
+        "Попробуйте еще раз или выберите другой способ оплаты.",
+        parse_mode="HTML"
     )
-    await message.answer(
-        "✅ <b>Оплата успешна!</b>\n\nСпасибо за покупку! Лимиты обновлены.",
-        parse_mode="HTML",
-    )
-    logger.info(f"Successful payment from {message.from_user.id}: {payment.total_amount} {payment.currency}")
+    await cb.answer()

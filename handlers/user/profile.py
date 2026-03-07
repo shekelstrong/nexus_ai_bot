@@ -49,10 +49,27 @@ async def cmd_profile(message: Message, session: AsyncSession):
     if user.subscription_expires_at:
         expires_str = user.subscription_expires_at.strftime("%Y-%m-%d %H:%M")
 
+    # Информация о токенах в зависимости от тарифа
+    if user.subscription_tier == "FREE":
+        tokens_info = f"🪙 <b>Токены:</b> {user.tokens_balance}/10 (ежедневный лимит)"
+        # Рассчитываем время до сброса
+        now = datetime.utcnow()
+        if user.daily_tokens_reset_at:
+            reset_time = user.daily_tokens_reset_at
+            if reset_time > now:
+                time_left = reset_time - now
+                hours = int(time_left.total_seconds() // 3600)
+                minutes = int((time_left.total_seconds() % 3600) // 60)
+                tokens_info += f"\n⏳ <b>Сброс через:</b> {hours}ч {minutes}м"
+    else:
+        tokens_info = f"🪙 <b>Токены:</b> {user.tokens_balance}"
+        if user.subscription_expires_at:
+            tokens_info += f" (подписка до {expires_str})"
+
     text = (
         f"👤 <b>Профиль</b>\n"
         f"ID: <code>{user.telegram_id}</code>\n\n"
-        f"🪙 <b>Токены:</b> {user.tokens_balance}\n"
+        f"{tokens_info}\n"
         f"🎬 <b>Видео-генерации:</b> {user.video_generations_balance}\n"
         f"💎 <b>Тариф:</b> {user.subscription_tier}\n"
         f"⏳ <b>Подписка до:</b> {expires_str}\n\n"
@@ -77,10 +94,27 @@ async def profile_cb(cb: CallbackQuery, session: AsyncSession):
     if user.subscription_expires_at:
         expires_str = user.subscription_expires_at.strftime("%Y-%m-%d %H:%M")
 
+    # Информация о токенах в зависимости от тарифа
+    if user.subscription_tier == "FREE":
+        tokens_info = f"🪙 <b>Токены:</b> {user.tokens_balance}/10 (ежедневный лимит)"
+        # Рассчитываем время до сброса
+        now = datetime.utcnow()
+        if user.daily_tokens_reset_at:
+            reset_time = user.daily_tokens_reset_at
+            if reset_time > now:
+                time_left = reset_time - now
+                hours = int(time_left.total_seconds() // 3600)
+                minutes = int((time_left.total_seconds() % 3600) // 60)
+                tokens_info += f"\n⏳ <b>Сброс через:</b> {hours}ч {minutes}м"
+    else:
+        tokens_info = f"🪙 <b>Токены:</b> {user.tokens_balance}"
+        if user.subscription_expires_at:
+            tokens_info += f" (подписка до {expires_str})"
+
     text = (
         f"👤 <b>Профиль</b>\n"
         f"ID: <code>{user.telegram_id}</code>\n\n"
-        f"🪙 <b>Токены:</b> {user.tokens_balance}\n"
+        f"{tokens_info}\n"
         f"🎬 <b>Видео-генерации:</b> {user.video_generations_balance}\n"
         f"💎 <b>Тариф:</b> {user.subscription_tier}\n"
         f"⏳ <b>Подписка до:</b> {expires_str}\n\n"

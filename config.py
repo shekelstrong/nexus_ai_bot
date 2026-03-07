@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     
     # Payments
     PLATEGA_MERCHANT_ID: Optional[str] = None
-    PLATEGA_SECRET: Optional[str] = None
-    
+    PLATEGA_TOKEN: Optional[str] = None
+
     # Extra (на всякий случай, если где-то используется)
     SSL_CERT_PATH: Optional[str] = None
     SSL_KEY_PATH: Optional[str] = None
@@ -55,7 +55,7 @@ WEBHOOK_PATH = settings.WEBHOOK_PATH
 WEBHOOK_URL = settings.WEBHOOK_URL
 PLATEGA_WEBHOOK_PATH = "/webhook/platega"
 PLATEGA_MERCHANT_ID = settings.PLATEGA_MERCHANT_ID
-PLATEGA_SECRET = settings.PLATEGA_SECRET
+PLATEGA_TOKEN = settings.PLATEGA_TOKEN
 
 OPENROUTER_API_KEY = settings.OPENROUTER_API_KEY
 FAL_AI_API_KEY = settings.FAL_AI_API_KEY

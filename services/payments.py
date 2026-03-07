@@ -1,17 +1,10 @@
 import secrets
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Optional, Dict, Any
-
-
-from aiogram import Bot
-from aiogram.types import LabeledPrice, Message, PreCheckoutQuery
-
+from typing import Optional, Dict, Any, List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 
 from database.models import (
     User,
@@ -23,8 +16,7 @@ from database.models import (
 from utils.logger import logger
 
 # Импортируем конфигурацию тарифов и пакетов
-from config import SUBSCRIPTION_TIERS, TOKEN_PACKAGES, VIDEO_PACKAGES
-
+from config import SUBSCRIPTION_TIERS, TOKEN_PACKAGES, VIDEO_PACKAGES, REF_LEVELS, ADMIN_IDS
 
 # Настраиваем планы согласно ТЗ
 # FREE: 10 токенов в день (сбрасываются ежедневно в scheduler)
@@ -127,158 +119,225 @@ async def activate_packet(
     await session.commit()
 
 
-async def process_referral_rewards(session: AsyncSession, user_id: int, amount_rub: Decimal) -> None:
+async def get_referrer_chain(session: AsyncSession, user_id: int, max_depth: int = 3) -> List[Dict]:
     """
-    Level 1: 15%, Level 2: 10%, Level 3: 5%
+    Возвращает цепочку рефералов до 3 уровня.
+    
+    Returns:
+        List[Dict]: [{'user': User, 'level': 1, 'bonus_percent': 0.15}, ...]
     """
-    res = await session.execute(select(User).where(User.id == user_id))
-    user = res.scalar_one()
+    chain = []
+    current_user_id = user_id
+
+    for level in range(1, max_depth + 1):
+        res = await session.execute(
+            select(User).where(User.id == current_user_id)
+        )
+        current_user = res.scalar_one_or_none()
+        
+        if not current_user or not current_user.referrer_id:
+            break
+        
+        # Получаем реферера
+        referrer_res = await session.execute(
+            select(User).where(User.id == current_user.referrer_id)
+        )
+        referrer = referrer_res.scalar_one_or_none()
+        
+        if not referrer:
+            break
+        
+        bonus_percent = REF_LEVELS[level - 1] if level <= len(REF_LEVELS) else 0
+        
+        chain.append({
+            'user': referrer,
+            'level': level,
+            'bonus_percent': bonus_percent,
+        })
+        
+        current_user_id = referrer.id
+
+    return chain
 
 
-    # Level 1
-    if user.referrer_id:
-        res1 = await session.execute(select(User).where(User.id == user.referrer_id).with_for_update())
-        ref1 = res1.scalar_one()
-        ref1.referral_balance += (amount_rub * Decimal("0.15"))
+async def process_referral_rewards(
+    session: AsyncSession,
+    user_id: int,
+    amount_rub: Decimal,
+    notify_callback=None
+) -> Dict:
+    """
+    Начисление реферальных бонусов (3 уровня: 15%/10%/5%).
+    
+    Args:
+        session: DB сессия
+        user_id: ID пользователя, который совершил платеж
+        amount_rub: Сумма платежа в рублях
+        notify_callback: Функция для отправки уведомлений (бот, referrer, bonus)
+    
+    Returns:
+        Dict: {'total_bonus': Decimal, 'referrers': [...]}
+    """
+    chain = await get_referrer_chain(session, user_id)
+    
+    total_bonus = Decimal("0")
+    referrer_info = []
 
-
-        # Level 2
-        if ref1.referrer_id:
-            res2 = await session.execute(select(User).where(User.id == ref1.referrer_id).with_for_update())
-            ref2 = res2.scalar_one()
-            ref2.referral_balance += (amount_rub * Decimal("0.10"))
-
-
-            # Level 3
-            if ref2.referrer_id:
-                res3 = await session.execute(select(User).where(User.id == ref2.referrer_id).with_for_update())
-                ref3 = res3.scalar_one()
-                ref3.referral_balance += (amount_rub * Decimal("0.05"))
-
+    for ref_data in chain:
+        referrer = ref_data['user']
+        level = ref_data['level']
+        bonus_percent = ref_data['bonus_percent']
+        
+        bonus = amount_rub * Decimal(str(bonus_percent))
+        total_bonus += bonus
+        
+        # Начисляем бонус на реферальный баланс
+        referrer.referral_balance += bonus
+        
+        referrer_info.append({
+            'telegram_id': referrer.telegram_id,
+            'username': referrer.username,
+            'level': level,
+            'bonus': bonus,
+        })
+        
+        # Уведомляем реферера
+        if notify_callback:
+            await notify_callback(referrer.telegram_id, level, bonus)
 
     await session.commit()
-
-
-# ----------------------------
-# Telegram Stars
-# ----------------------------
-async def send_stars_invoice(
-    bot: Bot,
-    session: AsyncSession,
-    chat_id: int,
-    telegram_user_id: int,
-    item_type: str, # 'tier', 'tokens', or 'video'
-    item_id: str,   # 'BASIC' or 'tokens_25' or 'video_10'
-) -> Message:
-    res = await session.execute(select(User).where(User.telegram_id == telegram_user_id))
-    user = res.scalar_one_or_none()
-    if not user:
-        raise RuntimeError("User not found")
-
-    price_rub = 0
-    title = ""
-    description = ""
-    tokens = 0
-    video_gens = 0
-
-    if item_type == "tier":
-        tier = SubscriptionTier(item_id)
-        plan = SUBSCRIPTION_PLANS[tier]
-        price_rub = plan["price_rub"]
-        title = f"Подписка {tier.value}"
-        tokens = plan["tokens"]
-        daily_tokens = tokens // 30 if tokens > 0 else 0
-        description = f"Лимит ~{daily_tokens} токенов/день.\nСрок: 30 дней."
-
-    elif item_type == "tokens":
-        packet = PACKETS.get(item_id)
-        if not packet:
-            raise ValueError("Пакет токенов не найден")
-        price_rub = packet["price_rub"]
-        title = packet["name"]
-        tokens = packet.get("tokens", 0)
-        description = f"Дополнительные {tokens} токенов (бессрочно)."
-
-    elif item_type == "video":
-        packet = PACKETS.get(item_id)
-        if not packet:
-            raise ValueError("Видео-пакет не найден")
-        price_rub = packet["price_rub"]
-        title = packet["name"]
-        video_gens = packet.get("generations", 0)
-        description = f"Дополнительные {video_gens} генераций видео (бессрочно)."
-
-    else:
-        raise ValueError(f"Неизвестный тип оплаты: {item_type}")
-
-    stars_amount = int(price_rub) # 1 RUB = 1 XTR
-    if stars_amount <= 0 and item_type != "tier":
-        raise ValueError("Цена должна быть > 0")
-
-    tx_type = TransactionType.SUBSCRIPTION if item_type == "tier" else TransactionType.TOKEN_PURCHASE
     
-    tx = await create_pending_transaction(
-        session=session,
-        user_id=user.id,
-        amount=Decimal(price_rub),
-        currency="XTR",
-        tx_type=tx_type,
-        payment_system="stars",
-        extra_data={
-            "item_type": item_type,
-            "item_id": item_id,
-            "tokens": tokens,
-            "video_generations": video_gens
-        },
-    )
-
-    prices = [LabeledPrice(label=title, amount=stars_amount)] if stars_amount > 0 else [LabeledPrice(label=title, amount=1)]
-
-    return await bot.send_invoice(
-        chat_id=chat_id,
-        title=title,
-        description=description,
-        payload=f"sub:{tx.payment_id}",
-        provider_token="",
-        currency="XTR",
-        prices=prices,
-    )
+    return {
+        'total_bonus': total_bonus,
+        'referrers': referrer_info,
+    }
 
 
-async def handle_pre_checkout(pre_checkout: PreCheckoutQuery, bot: Bot) -> None:
-    await bot.answer_pre_checkout_query(pre_checkout.id, ok=True)
-
-
-async def handle_successful_payment(
+async def process_platega_payment(
     session: AsyncSession,
-    telegram_user_id: int,
-    payload: str,
-    total_amount: int,
-    currency: str,
-) -> None:
-    if not payload.startswith("sub:"):
-        return
-
-    payment_id = payload.split(":", 1)[1]
+    order_id: int,
+    amount_rub: Decimal,
+    notify_callback=None
+) -> bool:
+    """
+    Обработка успешного платежа от Platega.
+    
+    Args:
+        session: DB сессия
+        order_id: ID заказа (содержит тип и ID пакета)
+        amount_rub: Сумма платежа
+        notify_callback: Функция для уведомлений
+    
+    Returns:
+        bool: True если успешно
+    """
+    # Парсим order_id: format "tokens_25_12345" или "tier_BASIC_12345"
+    parts = str(order_id).split("_")
+    
+    if len(parts) < 3:
+        logger.error(f"Invalid order_id format: {order_id}")
+        return False
+    
+    item_type = parts[0]  # tokens, video, tier
+    item_id = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
+    user_telegram_id = int(parts[-1])  # Последний элемент - telegram_id
+    
+    # Находим пользователя
+    res = await session.execute(select(User).where(User.telegram_id == user_telegram_id))
+    user = res.scalar_one_or_none()
+    
+    if not user:
+        logger.error(f"User not found: {user_telegram_id}")
+        return False
+    
+    # Находим транзакцию
     tx_res = await session.execute(
-        select(Transaction).where(Transaction.payment_id == payment_id).with_for_update()
+        select(Transaction).where(
+            Transaction.payment_id == str(order_id),
+            Transaction.status == TransactionStatus.PENDING
+        )
     )
     tx = tx_res.scalar_one_or_none()
-    if not tx or tx.status == TransactionStatus.SUCCESS:
-        return
-
+    
+    if not tx:
+        # Создаем новую транзакцию если не найдена
+        tx = await create_pending_transaction(
+            session=session,
+            user_id=user.id,
+            amount=amount_rub,
+            currency="RUB",
+            tx_type=TransactionType.TOKEN_PURCHASE,
+            payment_system="platega",
+            extra_data={"item_type": item_type, "item_id": item_id},
+        )
+    
+    # Обновляем транзакцию
     tx.status = TransactionStatus.SUCCESS
     tx.completed_at = datetime.utcnow()
     await session.commit()
-
-    item_type = tx.extra_data.get("item_type")
-    item_id = tx.extra_data.get("item_id")
-
+    
+    # Активируем товар
+    tokens_added = 0
+    video_added = 0
+    
     if item_type == "tier":
-        await activate_subscription(session, tx.user_id, SubscriptionTier(item_id))
+        tier = SubscriptionTier(item_id.upper())
+        plan = SUBSCRIPTION_PLANS[tier]
+        tokens_added = plan["tokens"]
+        await activate_subscription(session, user.id, tier)
+        
     elif item_type == "tokens":
-        await activate_packet(session, tx.user_id, item_id)
+        packet = PACKETS.get(item_id)
+        if packet:
+            tokens_added = packet.get("tokens", 0)
+            await activate_packet(session, user.id, item_id)
+            
     elif item_type == "video":
-        await activate_packet(session, tx.user_id, item_id)
+        packet = PACKETS.get(item_id)
+        if packet:
+            video_added = packet.get("generations", 0)
+            await activate_packet(session, user.id, item_id)
+    
+    # Обрабатываем реферальные начисления (15%/10%/5%)
+    referrer_result = await process_referral_rewards(
+        session, user.id, amount_rub, notify_callback
+    )
+    
+    logger.info(
+        f"✅ Platega payment: User {user_telegram_id} +{tokens_added} tokens, "
+        f"+{video_added} video | Amount: {amount_rub} RUB | "
+        f"Ref bonus: {referrer_result['total_bonus']} RUB"
+    )
+    
+    return True
 
-    await process_referral_rewards(session, tx.user_id, Decimal(tx.amount))
+
+async def get_purchase_details(item_type: str, item_id: str) -> Dict:
+    """
+    Возвращает детали покупки для отображения пользователю.
+    
+    Returns:
+        Dict: {'tokens': int, 'video': int, 'duration_days': int}
+    """
+    result = {'tokens': 0, 'video': 0, 'duration_days': 0}
+    
+    if item_type == "tier":
+        tier = SubscriptionTier(item_id.upper())
+        plan = SUBSCRIPTION_PLANS.get(tier)
+        if plan:
+            result['tokens'] = plan['tokens']
+            result['duration_days'] = plan['days']
+            
+    elif item_type == "tokens":
+        packet = PACKETS.get(item_id)
+        if packet:
+            result['tokens'] = packet.get('tokens', 0)
+            result['duration_days'] = 0  # Бессрочно
+            
+    elif item_type == "video":
+        packet = PACKETS.get(item_id)
+        if packet:
+            result['video'] = packet.get('generations', 0)
+            result['duration_days'] = 0  # Бессрочно
+    
+    return result

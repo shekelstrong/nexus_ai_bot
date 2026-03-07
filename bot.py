@@ -14,9 +14,12 @@ from database.db import db
 
 # Импорты Middleware и роутеров
 from middlewares.database import DbSessionMiddleware
-from handlers import user 
-from handlers.admin import admin_panel 
-from handlers.generation import selection, process 
+from handlers import user
+from handlers.admin import admin_panel, notifications
+from handlers.generation import selection, process
+
+# Импорт вебхук сервера
+from services.webhook_server import webhook_server
 
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
@@ -39,6 +42,9 @@ async def on_startup(bot: Bot):
     await bot.delete_webhook(drop_pending_updates=True)
     me = await bot.get_me()
     logger.info(f"✅ Bot started in POLLING mode: @{me.username}")
+    
+    # Запускаем вебхук сервер для Platega
+    await webhook_server.start(bot)
 
 async def main():
     # 1. Регистрация Middleware (БД обязательна для работы роутеров)
@@ -52,6 +58,12 @@ async def main():
 
     # Регистрация функции старта
     dp.startup.register(on_startup)
+    
+    # Регистрация функции остановки (для корректного закрытия вебхук сервера)
+    @dp.shutdown()
+    async def on_shutdown(bot: Bot):
+        logger.info("Bot shutting down...")
+        await webhook_server.stop(None)
 
     # 3. Запуск прослушки
     logger.info("🚀 Запуск polling...")

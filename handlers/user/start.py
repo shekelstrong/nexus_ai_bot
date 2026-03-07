@@ -8,7 +8,8 @@ from sqlalchemy import select
 
 from database.models import User
 from keyboards.inline import main_menu
-from config import TEXTS
+from config import TEXTS, ADMIN_IDS
+from handlers.admin.notifications import notify_admin_new_user, notify_referrer_new_referral
 
 router = Router(name="start_router")
 
@@ -28,7 +29,10 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
     result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
     user = result.scalar_one_or_none()
 
+    is_new_user = False
+    
     if not user:
+        is_new_user = True
         # Создаем нового пользователя с генерацией обязательного referral_code
         user = User(
             telegram_id=message.from_user.id,
@@ -45,9 +49,54 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
             # Уведомляем реферера, если он есть
             if referrer_id:
                 try:
-                    await message.bot.send_message(referrer_id, "🎉 У вас новый реферал!")
-                except:
-                    pass
+                    # Получаем данные реферера
+                    ref_result = await session.execute(
+                        select(User).where(User.telegram_id == referrer_id)
+                    )
+                    referrer = ref_result.scalar_one_or_none()
+                    
+                    if referrer:
+                        # Уведомление рефоводу
+                        await notify_referrer_new_referral(
+                            bot=message.bot,
+                            referrer_id=referrer_id,
+                            new_user_id=message.from_user.id,
+                            new_user_username=message.from_user.username,
+                            welcome_bonus=0.0,  # Приветственного бонуса нет, только % от пополнений
+                        )
+                        
+                        # Уведомление админам о новом пользователе с рефоводом
+                        await notify_admin_new_user(
+                            bot=message.bot,
+                            user_id=message.from_user.id,
+                            username=message.from_user.username,
+                            referrer_id=referrer_id,
+                            referrer_username=referrer.username,
+                            referrer_bonus=0.0,
+                        )
+                    else:
+                        # Реферер не найден (удален или не существует)
+                        await notify_admin_new_user(
+                            bot=message.bot,
+                            user_id=message.from_user.id,
+                            username=message.from_user.username,
+                            referrer_id=referrer_id,
+                            referrer_username=None,
+                            referrer_bonus=0.0,
+                        )
+                except Exception as e:
+                    print(f"Error notifying referrer: {e}")
+            else:
+                # Нет реферера - просто уведомляем админа
+                await notify_admin_new_user(
+                    bot=message.bot,
+                    user_id=message.from_user.id,
+                    username=message.from_user.username,
+                    referrer_id=None,
+                    referrer_username=None,
+                    referrer_bonus=0.0,
+                )
+                
         except Exception as e:
             await session.rollback()
             # В случае ошибки базы данных мы увидим её в логах службы
