@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from keyboards.inline import main_menu, model_families_menu, models_list_menu, back_to_menu_kb, image_gen_mode_kb, references_ready_kb, nano_banana_menu
+from keyboards.inline import main_menu, model_families_menu, models_list_menu, back_to_menu_kb, nano_banana_menu
 from database.models import User
 from model_config import MODEL_CATALOG
 from states.generation_states import GenState
@@ -122,23 +122,17 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
         text += "🔍 Теперь напишите ваш <b>вопрос для поиска</b>."
         await state.set_state(GenState.waiting_for_input)
     elif category == "gen_image":
-        # Все модели изображений — предлагаем выбор режима
-        text += "🎨 Выберите режим генерации:"
-        await state.clear()
-        await state.set_state(GenState.waiting_for_input) # Сбрасываем состояние
-        await callback.message.delete()
-        await callback.message.answer(text, reply_markup=image_gen_mode_kb(), parse_mode="HTML")
-        await callback.answer()
-        return
+        # Все модели изображений — ждут текстовый промпт и/или референсы (до 3 фото)
+        text += "🎨 <b>Генерация изображений</b>\n\n"
+        text += "📝 Напишите <b>описание изображения</b> (промпт) и/или прикрепите <b>до 3 фото</b> как референсы.\n"
+        text += "💡 <i>Референсы и промпт можно отправить одним сообщением.</i>"
+        await state.set_state(GenState.waiting_for_input)
     elif category == "gen_nano_banana":
-        # Nano Banana — тоже генерация изображений, предлагаем выбор режима
-        text += "🎨 Выберите режим генерации:"
-        await state.clear()
-        await state.set_state(GenState.waiting_for_input) # Сбрасываем состояние
-        await callback.message.delete()
-        await callback.message.answer(text, reply_markup=image_gen_mode_kb(), parse_mode="HTML")
-        await callback.answer()
-        return
+        # Nano Banana — тоже генерация изображений
+        text += "🍌 <b>Nano Banana</b>\n\n"
+        text += "📝 Напишите <b>описание</b> и/или прикрепите <b>до 3 фото</b> как референсы.\n"
+        text += "💡 <i>Можно только фото (нейросеть сама интерпретирует) или только текст.</i>"
+        await state.set_state(GenState.waiting_for_input)
     elif category == "gen_video":
         # Видео модели — проверяем тип
         if "motion-control" in model_id:
@@ -165,85 +159,4 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
     await callback.message.delete()
     # ИСПОЛЬЗУЕМ МАЛЕНЬКУЮ КЛАВИАТУРУ
     await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
-    await callback.answer()
-
-# --- ОБРАБОТКА ВЫБОРА РЕЖИМА ГЕНЕРАЦИИ ИЗОБРАЖЕНИЙ ---
-@router.callback_query(F.data == "img_mode:references")
-async def img_mode_references_handler(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Пользователь выбрал генерацию с референсами"""
-    result = await session.execute(select(User).where(User.telegram_id == callback.from_user.id))
-    user = result.scalar_one_or_none()
-    
-    if user:
-        model_id = user.current_model
-        info = MODEL_INFO.get(model_id, {})
-        name = info.get("name", "Модель")
-        
-        await state.update_data(reference_images=[]) # Очищаем список референсов
-        await state.set_state(GenState.waiting_for_reference_images)
-        
-        await callback.message.edit_text(
-            f"📸 <b>Режим с референсами</b>\n\n"
-            f"Модель: <b>{name}</b>\n\n"
-            f"Отправьте <b>до 3 изображений</b> для использования как референсы.\n"
-            f"Когда закончите — нажмите кнопку ✅ Готово.",
-            reply_markup=references_ready_kb(),
-            parse_mode="HTML"
-        )
-    
-    await callback.answer()
-
-@router.callback_query(F.data == "img_mode:prompt")
-async def img_mode_prompt_handler(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Пользователь выбрал генерацию только по промпту"""
-    result = await session.execute(select(User).where(User.telegram_id == callback.from_user.id))
-    user = result.scalar_one_or_none()
-    
-    if user:
-        model_id = user.current_model
-        info = MODEL_INFO.get(model_id, {})
-        name = info.get("name", "Модель")
-        
-        await state.set_state(GenState.waiting_for_image_prompt)
-        
-        await callback.message.edit_text(
-            f"✍️ <b>Режим только с промптом</b>\n\n"
-            f"Модель: <b>{name}</b>\n\n"
-            f"Напишите <b>описание изображения</b> (промпт).",
-            reply_markup=back_to_menu_kb(),
-            parse_mode="HTML"
-        )
-    
-    await callback.answer()
-
-@router.callback_query(F.data == "references_done")
-async def references_done_handler(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Пользователь закончил загрузку референсов"""
-    data = await state.get_data()
-    reference_images = data.get("reference_images", [])
-    
-    if not reference_images:
-        await callback.answer("❌ Сначала отправьте хотя бы 1 референс!", show_alert=True)
-        return
-    
-    result = await session.execute(select(User).where(User.telegram_id == callback.from_user.id))
-    user = result.scalar_one_or_none()
-    
-    if user:
-        model_id = user.current_model
-        info = MODEL_INFO.get(model_id, {})
-        name = info.get("name", "Модель")
-        
-        await state.set_state(GenState.waiting_for_image_prompt)
-        
-        refs_count = len(reference_images)
-        await callback.message.edit_text(
-            f"✅ <b>Референсы загружены!</b>\n\n"
-            f"Модель: <b>{name}</b>\n"
-            f"📸 Референсов: {refs_count} шт.\n\n"
-            f"Теперь напишите <b>описание изображения</b> (промпт).",
-            reply_markup=back_to_menu_kb(),
-            parse_mode="HTML"
-        )
-    
     await callback.answer()

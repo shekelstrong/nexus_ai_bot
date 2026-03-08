@@ -51,23 +51,6 @@ def nano_banana_menu():
     ])
     return kb
 
-def image_gen_mode_kb():
-    """Клавиатура выбора режима генерации изображения"""
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📸 С референсами", callback_data="img_mode:references")],
-        [InlineKeyboardButton(text="✍️ Только промпт", callback_data="img_mode:prompt")],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
-    ])
-    return kb
-
-def references_ready_kb():
-    """Клавиатура когда референсы загружены"""
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Готово, перехожу к промпту", callback_data="references_done")],
-        [InlineKeyboardButton(text="◀️ Отмена", callback_data="back_to_menu")]
-    ])
-    return kb
-
 # --- ВЫБОР СЕМЕЙСТВА МОДЕЛЕЙ ---
 def model_families_menu(category: str):
     from model_config import MODEL_CATALOG

@@ -16,7 +16,7 @@ from sqlalchemy import select, desc
 
 from database.models import User, Generation, GenerationStatus, MessageHistory
 from services.api_client import APIClient
-from keyboards.inline import main_menu, back_to_menu_kb, references_ready_kb, image_gen_mode_kb
+from keyboards.inline import main_menu, back_to_menu_kb
 from utils.logger import logger
 from model_config import MODEL_CATALOG
 from states.generation_states import GenState
@@ -144,84 +144,6 @@ async def step_second_image(message: Message, state: FSMContext, session: AsyncS
     await state.clear()
 
 
-# --- ОБРАБОТКА РЕФЕРЕНСОВ ДЛЯ ГЕНЕРАЦИИ ИЗОБРАЖЕНИЙ ---
-@router.message(GenState.waiting_for_reference_images, F.photo)
-async def step_reference_image(message: Message, state: FSMContext, session: AsyncSession):
-    """Обработка загруженного референса (изображения)"""
-    data = await state.get_data()
-    reference_images = data.get("reference_images", [])
-    
-    if len(reference_images) >= 3:
-        await message.answer("⚠️ Максимум 3 референса! Нажмите ✅ Готово или ◀️ Отмена.", reply_markup=references_ready_kb())
-        return
-    
-    photo = message.photo[-1]
-    file_id = photo.file_id
-    
-    # Получаем URL или base64 для референса
-    ref_url = await _get_file_url_or_base64(message.bot, file_id)
-    
-    if ref_url:
-        reference_images.append(ref_url)
-        await state.update_data(reference_images=reference_images)
-        
-        remaining = 3 - len(reference_images)
-        if remaining > 0:
-            await message.answer(
-                f"✅ Референс #{len(reference_images)} принят!\n\n"
-                f"Можно добавить еще <b>{remaining}</b> референс(а/ов).\n"
-                f"Когда закончите — нажмите кнопку ✅ Готово.",
-                reply_markup=references_ready_kb(),
-                parse_mode="HTML"
-            )
-        else:
-            await message.answer(
-                f"✅ Референс #{len(reference_images)} принят!\n\n"
-                f"<b>Максимум референсов достигнут.</b>\n"
-                f"Нажмите ✅ Готово для продолжения.",
-                reply_markup=references_ready_kb()
-            )
-    else:
-        await message.answer("❌ Ошибка загрузки изображения. Попробуйте еще раз.")
-
-
-@router.message(GenState.waiting_for_reference_images, F.text)
-async def step_reference_text_hint(message: Message, state: FSMContext):
-    """Подсказка если пользователь отправил текст вместо фото"""
-    await message.answer(
-        "📸 Пожалуйста, отправьте <b>изображение</b> как референс.\n"
-        f"Или нажмите кнопку, если референсы больше не нужны.",
-        reply_markup=references_ready_kb(),
-        parse_mode="HTML"
-    )
-
-
-@router.message(GenState.waiting_for_image_prompt, F.text)
-async def step_image_prompt(message: Message, state: FSMContext, session: AsyncSession):
-    """Обработка текстового промпта после загрузки референсов"""
-    data = await state.get_data()
-    reference_images = data.get("reference_images", [])
-    prompt = message.text
-    
-    if not prompt or len(prompt) < 3:
-        await message.answer("⚠️ Промпт слишком короткий. Напишите более подробное описание.")
-        return
-    
-    # Запускаем генерацию с референсами или без
-    await run_image_generation(message, session, prompt, reference_images)
-    await state.clear()
-
-
-@router.message(GenState.waiting_for_image_prompt, F.photo)
-async def step_image_prompt_photo_hint(message: Message, state: FSMContext):
-    """Если пользователь отправил фото вместо текста промпта"""
-    await message.answer(
-        "✍️ Пожалуйста, напишите <b>текстовое описание</b> (промпт).\n"
-        "Референсы уже загружены, теперь нужно описание того, что генерировать.",
-        parse_mode="HTML"
-    )
-
-
 @router.message((F.text) | (F.photo) | (F.video))
 async def handle_standard_input(message: Message, state: FSMContext, session: AsyncSession):
     current_state = await state.get_state()
@@ -263,13 +185,33 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
         await message.answer("❌ Эта модель требует <b>фотографию</b>! Прикрепите изображение.", parse_mode="HTML")
         return
 
-    # Для изображений - перенаправляем на выбор режима, если это первое сообщение
-    if category == "gen_image" and current_state == GenState.waiting_for_input:
-        # Предлагаем выбор режима
-        await message.answer(
-            "🎨 Выберите режим генерации:",
-            reply_markup=image_gen_mode_kb()
-        )
+    # Для изображений — обрабатываем фото и/или текст
+    if category in ["gen_image", "gen_nano_banana"]:
+        # Собираем референсы из фото (до 3)
+        reference_images = []
+        if message.photo:
+            # Берем все фото из сообщения (максимум 3 для референсов)
+            for photo in message.photo[:3]:
+                ref_url = await _get_file_url_or_base64(message.bot, photo.file_id)
+                if ref_url:
+                    reference_images.append(ref_url)
+        
+        # Получаем промпт из текста или caption к фото
+        prompt = message.text or message.caption or ""
+        
+        # Если нет ни фото ни текста — просим ввести что-то
+        if not reference_images and not prompt:
+            await message.answer(
+                "⚠️ <b>Отправьте текст и/или фото!</b>\n\n"
+                "Для генерации изображения нужен хотя бы один из параметров:\n"
+                "• Текстовый промпт (описание)\n"
+                "• 1-3 фотографии как референсы",
+                parse_mode="HTML"
+            )
+            return
+        
+        # Запускаем генерацию
+        await run_image_generation(message, session, prompt, reference_images)
         return
 
     await run_simple_generation(message, user, session, model_info, category)
