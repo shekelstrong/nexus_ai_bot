@@ -124,13 +124,13 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
     elif category == "gen_image":
         # Все модели изображений — ждут текстовый промпт и/или референсы (до 3 фото)
         text += "🎨 <b>Генерация изображений</b>\n\n"
-        text += "📝 Напишите <b>описание изображения</b> (промпт) и/или прикрепите <b>до 3 фото</b> как референсы.\n"
+        text += "📝 Напишите <b>описание изображения</b> (промпт) и/или прикрепите <b>до 3 фото</b> в качестве референсов.\n"
         text += "💡 <i>Референсы и промпт можно отправить одним сообщением.</i>"
         await state.set_state(GenState.waiting_for_input)
     elif category == "gen_nano_banana":
         # Nano Banana — тоже генерация изображений
         text += "🍌 <b>Nano Banana</b>\n\n"
-        text += "📝 Напишите <b>описание</b> и/или прикрепите <b>до 3 фото</b> как референсы.\n"
+        text += "📝 Напишите <b>описание</b> и/или прикрепите <b>до 3 фото</b> в качестве референсов.\n"
         text += "💡 <i>Можно только фото (нейросеть сама интерпретирует) или только текст.</i>"
         await state.set_state(GenState.waiting_for_input)
     elif category == "gen_video":
