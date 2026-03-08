@@ -114,18 +114,38 @@ class StandardImageGenerator:
                                     return self._process_url(url)
 
                     if isinstance(content, str):
-                        url_match = re.search(r'\((https?://[^\)]+)\)', content)
+                        # Проверяем, не является ли это сообщением об ошибке
+                        content_lower = content.lower()
+                        if "error" in content_lower or "credit" in content_lower or "payment" in content_lower:
+                            logger.warning(f"Image gen: Response contains error message: {content[:200]}")
+                            return f"Ошибка генерации: {content[:200]}"
+                        
+                        # Ищем URL картинки в формате Markdown: [text](url)
+                        url_match = re.search(r'!\[.*?\]\((https?://[^\)]+)\)', content)
                         if url_match:
                             return url_match.group(1)
-
-                        url_simple = re.search(r'(https?://\S+)', content)
+                        
+                        # Ищем URL в формате [text](url)
+                        url_match = re.search(r'\[.*?\]\((https?://[^\)]+)\)', content)
+                        if url_match:
+                            url = url_match.group(1)
+                            # Проверяем, что это не ссылка на сайт
+                            if 'openrouter.ai' not in url and 'settings' not in url:
+                                return url
+                        
+                        # Ищем простой URL (но не если это часть предложения)
+                        url_simple = re.search(r'(https?://[^\s\])>"]+)', content)
                         if url_simple:
-                            return url_simple.group(1)
+                            url = url_simple.group(1)
+                            # Проверяем, что это не ссылка на сайт
+                            if 'openrouter.ai' not in url and 'settings' not in url:
+                                return url
 
-                        if len(content) < 1000:
+                        # Если контент короткий и не содержит ошибок - возвращаем как текст
+                        if len(content) < 1000 and "error" not in content_lower:
                             return content
 
-                    logger.warning(f"Image gen: No image found in response. Keys: {message.keys()}")
+                    logger.warning(f"Image gen: No image found in response.")
                     return None
 
         except Exception as e:

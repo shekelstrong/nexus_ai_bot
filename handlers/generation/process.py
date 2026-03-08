@@ -6,7 +6,6 @@ import aiohttp
 import os
 import re
 import tempfile
-import time
 from typing import Optional, Dict
 
 from aiogram import Router, F
@@ -30,12 +29,8 @@ router = Router(name="process_router")
 # Ключ: media_group_id, Значение: asyncio.Lock
 _album_locks: Dict[str, asyncio.Lock] = {}
 
-# Словарь для отслеживания завершённых альбомов
-# Ключ: media_group_id, Значение: timestamp завершения
-_processed_albums: Dict[str, float] = {}
-
-# Время жизни записи о обработанном альбоме (5 минут)
-ALBUM_LOCK_TIMEOUT = 300
+# Максимальное время ожидания сбора всех фото из альбома (сек)
+ALBUM_WAIT_TIMEOUT = 3.0
 
 ALL_MODELS = {}
 for category, families in MODEL_CATALOG.items():
@@ -165,17 +160,6 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
     
     # Для альбомов используем блокировку для предотвращения race condition
     if media_group_id:
-        # Очищаем старые записи
-        now = time.time()
-        expired = [k for k, v in _processed_albums.items() if now - v > ALBUM_LOCK_TIMEOUT]
-        for k in expired:
-            del _processed_albums[k]
-        
-        # Проверяем, не был ли уже обработан этот альбом
-        if media_group_id in _processed_albums:
-            logger.info(f"Album: альбом {media_group_id} уже обработан, игнорируем")
-            return
-        
         logger.info(f"Album: создаем/получаем lock для {media_group_id}")
         if media_group_id not in _album_locks:
             _album_locks[media_group_id] = asyncio.Lock()
@@ -184,10 +168,6 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
         logger.info(f"Album: захватываем lock для {media_group_id}")
         async with _album_locks[media_group_id]:
             logger.info(f"Album: lock захвачен для {media_group_id}")
-            # Проверяем еще раз после захвата lock
-            if media_group_id in _processed_albums:
-                logger.info(f"Album: альбом уже обработан другим сообщением, игнорируем")
-                return
             return await _process_album_message(message, state, session, media_group_id)
     else:
         logger.info("Single message: обрабатываем как одиночное")
@@ -262,22 +242,21 @@ async def _process_album_message(
         
         logger.info(f"Album [LOCKED]: сохранено в state, собрано {len(album_photos)} фото из альбома")
         
-        # Если это первое фото — ждем остальные
-        if len(album_photos) == 1:
-            logger.info("Album [LOCKED]: первое фото, ждем остальные 1.5 сек...")
-            await asyncio.sleep(1.5)
-            # Перечитываем данные после задержки
+        # Ждем остальные фото
+        wait_count = 0
+        max_wait_cycles = 10  # 10 * 0.3сек = 3 сек
+        while len(album_photos) < 4 and wait_count < max_wait_cycles:  # Максимум 3 фото + 1 проверка
+            # Ждем немного
+            await asyncio.sleep(0.3)
+            wait_count += 1
+            
+            # Перечитываем данные
             data = await state.get_data()
             album_photos = data.get("album_photos") or []
-            logger.info(f"Album [LOCKED]: после ожидания собрано {len(album_photos)} фото")
+            logger.info(f"Album [LOCKED]: после ожидания {wait_count * 0.3:.1f}сек собрано {len(album_photos)} фото")
         
-        # Если фото меньше 3 — ждем еще немного
-        if len(album_photos) < 3:
-            logger.info(f"Album [LOCKED]: собрано {len(album_photos)} фото, ждем еще 0.5 сек...")
-            await asyncio.sleep(0.5)
-            data = await state.get_data()
-            album_photos = data.get("album_photos") or []
-            logger.info(f"Album [LOCKED]: финальное количество фото: {len(album_photos)}")
+        if wait_count >= max_wait_cycles:
+            logger.info(f"Album [LOCKED]: таймаут ожидания ({ALBUM_WAIT_TIMEOUT}сек)")
         
         # Запускаем генерацию с собранными референсами
         reference_images = album_photos[:3]
@@ -293,10 +272,6 @@ async def _process_album_message(
         await run_image_generation(message, session, prompt, reference_images, state)
         
         logger.info(f"Album [LOCKED]: генерация завершена")
-        
-        # Помечаем альбом как обработанный с timestamp
-        _processed_albums[media_group_id] = time.time()
-        logger.info(f"Album [LOCKED]: альбом помечен как обработанный")
         
     except Exception as e:
         logger.exception(f"_process_album_message: ИСКЛЮЧЕНИЕ: {e}")
