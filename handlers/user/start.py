@@ -21,9 +21,23 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
     # Реферальная система: достаем referral_code из ссылки
     args = message.text.split()
     referrer_code = None
-    if len(args) > 1:
-        referrer_code = args[1]
+    start_param = None
     
+    if len(args) > 1:
+        start_param = args[1]
+        
+        # Проверяем, не является ли это параметром оплаты
+        if start_param.startswith("pay_success_"):
+            order_id = start_param.replace("pay_success_", "")
+            await handle_pay_success(message, session, order_id)
+            return
+        elif start_param == "pay_failed":
+            await handle_pay_failed(message)
+            return
+        
+        # Если не оплата, проверяем на реферальный код
+        referrer_code = start_param
+
     # ЛОГИРОВАНИЕ для отладки
     logger.info(f"🔍 /start от {message.from_user.id} (@{message.from_user.username}), реферер (code): {referrer_code}")
 
@@ -35,7 +49,7 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
 
     if not user:
         is_new_user = True
-        
+
         # Находим рефовода по referral_code (НЕ по telegram_id!)
         referrer_internal_id = None
         referrer_user = None
@@ -108,6 +122,69 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
     text = TEXTS["ru"]["welcome"]
 
     await message.answer(text, reply_markup=main_menu(), parse_mode="HTML")
+
+
+async def handle_pay_success(message: Message, session: AsyncSession, order_id: str):
+    """
+    Обработка успешной оплаты после возврата из Platega.
+    """
+    from services.payments import get_purchase_details
+    
+    logger.info(f"💰 Обработка успешной оплаты: order_id={order_id}")
+    
+    # Парсим order_id
+    parts = order_id.split("_")
+    if len(parts) < 3:
+        await message.answer(
+            "❌ <b>Ошибка обработки платежа</b>\n\n"
+            "Некорректный формат заказа. Обратитесь в поддержку.",
+            parse_mode="HTML"
+        )
+        return
+    
+    item_type = parts[0]
+    item_id = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
+    
+    # Получаем детали покупки
+    details = get_purchase_details(item_type, item_id)
+    
+    text = (
+        f"✅ <b>Оплата прошла успешно!</b>\n\n"
+        f"💎 Начислено:\n"
+    )
+    
+    if details['tokens'] > 0:
+        if details['duration_days'] > 0:
+            daily = details['tokens'] // details['duration_days']
+            text += f"🪙 <b>{details['tokens']} токенов</b> ({daily} в день)\n"
+        else:
+            text += f"🪙 <b>{details['tokens']} токенов</b> (бессрочно)\n"
+    
+    if details['video'] > 0:
+        text += f"🎬 <b>{details['video']} видео</b> (бессрочно)\n"
+    
+    if details['duration_days'] > 0:
+        text += f"\n⏳ Срок: <b>{details['duration_days']} дней</b>"
+    
+    text += "\n\nСпасибо за покупку! 🎉"
+    
+    await message.answer(text, parse_mode="HTML")
+    await message.answer(TEXTS["ru"]["welcome"], reply_markup=main_menu(), parse_mode="HTML")
+
+
+async def handle_pay_failed(message: Message):
+    """
+    Обработка неудачной оплаты после возврата из Platega.
+    """
+    logger.warning(f"💰 Оплата не прошла для пользователя {message.from_user.id}")
+    
+    await message.answer(
+        "❌ <b>Оплата не прошла</b>\n\n"
+        "Попробуйте еще раз или выберите другой способ оплаты.\n\n"
+        "Если проблема повторяется, обратитесь в поддержку.",
+        parse_mode="HTML"
+    )
+    await message.answer(TEXTS["ru"]["welcome"], reply_markup=main_menu(), parse_mode="HTML")
 
 
 def support_menu() -> InlineKeyboardMarkup:

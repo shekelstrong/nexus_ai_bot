@@ -9,7 +9,7 @@
 - **50+ AI models** from providers: OpenAI, Anthropic, Google, DeepSeek, Meta, xAI, Mistral, and more
 - **Token-based economy**: Users purchase generation credits via subscription tiers
 - **Referral system**: 3-level referral rewards (15%, 10%, 5%)
-- **Premium subscriptions**: FREE, PREMIUM, PREMIUM_X2 tiers
+- **Premium subscriptions**: FREE, BASIC, PRO, VIP, ELITE tiers
 - **Payment integration**: Platega payment system
 - **Message history**: Persistent conversation context with models
 
@@ -91,7 +91,7 @@ BASE_URL=https://your-domain.com
 WEB_PORT=8443
 
 PLATEGA_MERCHANT_ID=<merchant_id>
-PLATEGA_SECRET=<secret>
+PLATEGA_TOKEN=<secret>
 ```
 
 ### Local Development
@@ -186,18 +186,19 @@ class User(Base):
 
 ### Subscription Tiers (config.py)
 ```python
-TARIFFS = {
-    "day": {"price": 100, "gens": 10, "name": "🚀 Тест-драйв (10 шт)"},
-    "week": {"price": 450, "gens": 50, "name": "📅 Неделька (50 шт)"},
-    "month": {"price": 1600, "gens": 200, "name": "🗓 Месяц (200 шт)"},
-    # ... more tiers
+SUBSCRIPTION_TIERS = {
+    "FREE":  {"price": 0,    "tokens": 10,  "days": 0,  "name": "🆓 FREE (10 токенов/день)"},
+    "BASIC": {"price": 790,  "tokens": 460, "days": 30, "name": "📦 BASIC (460 токенов/месяц)"},
+    "PRO":   {"price": 1490, "tokens": 880, "days": 30, "name": "⭐ PRO (880 токенов/месяц)"},
+    "VIP":   {"price": 2490, "tokens": 1700,"days": 30, "name": "🏆 VIP (1700 токенов/месяц)"},
+    "ELITE": {"price": 3690, "tokens": 2600,"days": 30, "name": "💎 ELITE (2600 токенов/месяц)"},
 }
 
 REF_LEVELS = [0.15, 0.10, 0.05]  # Referral reward percentages
 ```
 
 ### Model Categories (model_config.py)
-- `gen_text`: 50+ text models (GPT, Claude, Gemini, etc.)
+- `gen_text`: 50+ text models (GPT, Claude, Gemini, DeepSeek, etc.)
 - `gen_image`: Flux, Stable Diffusion, Seedream, Gemini Image
 - `gen_video`: Kling, Veo, Wan (via FAL AI)
 - `gen_search`: Perplexity Sonar models

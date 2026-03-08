@@ -17,6 +17,7 @@ from middlewares.database import DbSessionMiddleware
 from handlers import user
 from handlers.admin import admin_panel, notifications
 from handlers.generation import selection, process
+from handlers.user import payment
 
 # Импорт вебхук сервера
 from services.webhook_server import webhook_server
@@ -55,6 +56,7 @@ async def main():
     dp.include_router(selection.router)
     dp.include_router(user.router) # Тут лежит наш /start
     dp.include_router(process.router)
+    dp.include_router(payment.router) # Обработка платежей
 
     # Регистрация функции старта
     dp.startup.register(on_startup)

@@ -16,29 +16,57 @@ from database.db import db
 from database.session import async_session_maker
 from services.payments import process_platega_payment
 from utils.logger import setup_logger
+from config import WEB_PORT
 
 logger = setup_logger()
 
 
 class WebhookServer:
-    def __init__(self, host: str = "0.0.0.0", port: int = 8080):
+    def __init__(self, host: str = "0.0.0.0", port: int = None):
         self.host = host
-        self.port = port
+        self.port = port if port is not None else WEB_PORT
         self.app = web.Application()
         self.bot = None
-        
+
         # Регистрируем роуты
         self.app.router.add_post('/webhook/platega', self.handle_platega_webhook)
         self.app.router.add_get('/health', self.handle_health)
+        # Роуты для возврата пользователя после оплаты
+        self.app.router.add_get('/pay_success', self.handle_pay_success)
+        self.app.router.add_get('/pay_failed', self.handle_pay_failed)
     
     async def handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint"""
         return web.json_response({"status": "ok"})
+
+    async def handle_pay_success(self, request: web.Request) -> web.Response:
+        """
+        Обработчик возврата пользователя после успешной оплаты.
+        Перенаправляет в бота с параметром для отображения успеха.
+        """
+        # Получаем order_id из query параметров
+        order_id = request.query.get('order_id')
+        
+        # Формируем ссылку для возврата в бота
+        if order_id:
+            redirect_url = f"https://t.me/{(await self.bot.get_me()).username}?start=pay_success_{order_id}"
+        else:
+            redirect_url = f"https://t.me/{(await self.bot.get_me()).username}"
+        
+        raise web.HTTPSeeOther(redirect_url)
+
+    async def handle_pay_failed(self, request: web.Request) -> web.Response:
+        """
+        Обработчик возврата пользователя после неудачной оплаты.
+        Перенаправляет в бота с параметром для отображения ошибки.
+        """
+        redirect_url = f"https://t.me/{(await self.bot.get_me()).username}?start=pay_failed"
+        raise web.HTTPSeeOther(redirect_url)
     
     async def handle_platega_webhook(self, request: web.Request) -> web.Response:
         """
         Обработка вебхука от Platega.
-        
+
         Ожидаемые данные:
         {
             "status": "CONFIRMED",
@@ -48,20 +76,33 @@ class WebhookServer:
         }
         """
         try:
-            data = await request.json()
+            # Пробуем получить JSON
+            try:
+                data = await request.json()
+            except json.JSONDecodeError:
+                # Если не JSON, пробуем получить form-data
+                form_data = await request.post()
+                data = dict(form_data)
+                logger.info(f"💰 PLATEGA WEBHOOK (form-data): {data}")
+
             logger.info(f"💰 PLATEGA WEBHOOK: {data}")
+
+            # Поддерживаем разные форматы status
+            status = str(data.get("status") or data.get("Status") or data.get("STATUS", "")).upper()
             
-            status = str(data.get("status")).upper()
-            if status != "CONFIRMED":
+            # Для Platega.io проверяем успешный статус
+            # Статус может быть "CONFIRMED", "SUCCESS", "PAID", "completed"
+            if status not in ("CONFIRMED", "SUCCESS", "PAID", "COMPLETED"):
                 logger.info(f"Ignoring payment status: {status}")
                 return web.json_response({"status": "ignored"})
-            
-            order_id = data.get("payload")
-            amount = Decimal(str(data.get("amount", 0)))
-            currency = data.get("currency", "RUB")
-            
+
+            # order_id может быть в разных полях
+            order_id = data.get("payload") or data.get("order_id") or data.get("orderId") or data.get("merchant_order_id")
+            amount = Decimal(str(data.get("amount") or data.get("Amount") or data.get("total") or 0))
+            currency = data.get("currency") or data.get("Currency") or "RUB"
+
             if not order_id:
-                logger.error("No payload in webhook")
+                logger.error("No payload/order_id in webhook data")
                 return web.json_response({"status": "error", "msg": "no payload"}, status=400)
             
             # Обрабатываем платеж
@@ -242,11 +283,29 @@ class WebhookServer:
         self.bot = bot
         runner = web.AppRunner(self.app)
         await runner.setup()
-        site = web.TCPSite(runner, self.host, self.port)
-        await site.start()
-        logger.info(f"🌐 Webhook server started on http://{self.host}:{self.port}")
-        logger.info(f"   Platega webhook: POST /webhook/platega")
+        
+        # Проверяем наличие SSL сертификатов
+        from config import SSL_CERT_PATH, SSL_KEY_PATH, BASE_URL
+        
+        if SSL_CERT_PATH and SSL_KEY_PATH:
+            import ssl
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ssl_context.load_cert_chain(SSL_CERT_PATH, SSL_KEY_PATH)
+            site = web.TCPSite(runner, self.host, self.port, ssl_context=ssl_context)
+            protocol = "https"
+            logger.info(f"🌐 Webhook server started on https://{self.host}:{self.port} (SSL)")
+        else:
+            site = web.TCPSite(runner, self.host, self.port)
+            protocol = "http"
+            logger.info(f"🌐 Webhook server started on http://{self.host}:{self.port} (no SSL)")
+            logger.warning("⚠️ SSL не настроен! Для работы вебхуков от Platega необходим HTTPS.")
+            logger.warning(f"⚠️ Настройте SSL_CERT_PATH и SSL_KEY_PATH в .env файле")
+        
+        # Выводим полный URL вебхука для настройки в Platega
+        webhook_url = f"{protocol}://{BASE_URL}/webhook/platega"
+        logger.info(f"   🔗 Platega webhook URL: {webhook_url}")
         logger.info(f"   Health check: GET /health")
+        
         return runner
     
     async def stop(self, runner):
@@ -256,4 +315,4 @@ class WebhookServer:
 
 
 # Глобальный экземпляр
-webhook_server = WebhookServer(port=8080)
+webhook_server = WebhookServer()
