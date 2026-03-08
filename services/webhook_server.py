@@ -292,10 +292,12 @@ class WebhookServer:
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ssl_context.load_cert_chain(SSL_CERT_PATH, SSL_KEY_PATH)
             site = web.TCPSite(runner, self.host, self.port, ssl_context=ssl_context)
+            await site.start()
             protocol = "https"
             logger.info(f"🌐 Webhook server started on https://{self.host}:{self.port} (SSL)")
         else:
             site = web.TCPSite(runner, self.host, self.port)
+            await site.start()
             protocol = "http"
             logger.info(f"🌐 Webhook server started on http://{self.host}:{self.port} (no SSL)")
             logger.warning("⚠️ SSL не настроен! Для работы вебхуков от Platega необходим HTTPS.")
