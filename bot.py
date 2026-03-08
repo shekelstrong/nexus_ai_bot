@@ -53,9 +53,8 @@ async def main():
     # 2. Регистрация роутеров
     dp.include_router(admin_panel.router)
     dp.include_router(selection.router)
-    dp.include_router(user.router) # Тут лежит наш /start
+    dp.include_router(user.router) # Тут лежит наш /start (включает payment)
     dp.include_router(process.router)
-    dp.include_router(payment.router) # Обработка платежей
 
     # Регистрация функции старта
     dp.startup.register(on_startup)
