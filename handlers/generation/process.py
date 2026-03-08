@@ -6,6 +6,7 @@ import aiohttp
 import os
 import re
 import tempfile
+import time
 from typing import Optional, Dict
 
 from aiogram import Router, F
@@ -28,6 +29,13 @@ router = Router(name="process_router")
 # Глобальный словарь для блокировки обработки альбомов
 # Ключ: media_group_id, Значение: asyncio.Lock
 _album_locks: Dict[str, asyncio.Lock] = {}
+
+# Словарь для отслеживания завершённых альбомов
+# Ключ: media_group_id, Значение: timestamp завершения
+_processed_albums: Dict[str, float] = {}
+
+# Время жизни записи о обработанном альбоме (5 минут)
+ALBUM_LOCK_TIMEOUT = 300
 
 ALL_MODELS = {}
 for category, families in MODEL_CATALOG.items():
@@ -157,6 +165,17 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
     
     # Для альбомов используем блокировку для предотвращения race condition
     if media_group_id:
+        # Очищаем старые записи
+        now = time.time()
+        expired = [k for k, v in _processed_albums.items() if now - v > ALBUM_LOCK_TIMEOUT]
+        for k in expired:
+            del _processed_albums[k]
+        
+        # Проверяем, не был ли уже обработан этот альбом
+        if media_group_id in _processed_albums:
+            logger.info(f"Album: альбом {media_group_id} уже обработан, игнорируем")
+            return
+        
         logger.info(f"Album: создаем/получаем lock для {media_group_id}")
         if media_group_id not in _album_locks:
             _album_locks[media_group_id] = asyncio.Lock()
@@ -165,6 +184,10 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
         logger.info(f"Album: захватываем lock для {media_group_id}")
         async with _album_locks[media_group_id]:
             logger.info(f"Album: lock захвачен для {media_group_id}")
+            # Проверяем еще раз после захвата lock
+            if media_group_id in _processed_albums:
+                logger.info(f"Album: альбом уже обработан другим сообщением, игнорируем")
+                return
             return await _process_album_message(message, state, session, media_group_id)
     else:
         logger.info("Single message: обрабатываем как одиночное")
@@ -270,6 +293,10 @@ async def _process_album_message(
         await run_image_generation(message, session, prompt, reference_images, state)
         
         logger.info(f"Album [LOCKED]: генерация завершена")
+        
+        # Помечаем альбом как обработанный с timestamp
+        _processed_albums[media_group_id] = time.time()
+        logger.info(f"Album [LOCKED]: альбом помечен как обработанный")
         
     except Exception as e:
         logger.exception(f"_process_album_message: ИСКЛЮЧЕНИЕ: {e}")
