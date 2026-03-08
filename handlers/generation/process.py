@@ -6,7 +6,7 @@ import aiohttp
 import os
 import re
 import tempfile
-from typing import Optional
+from typing import Optional, Dict
 
 from aiogram import Router, F
 from aiogram.types import Message, BufferedInputFile, FSInputFile
@@ -25,6 +25,9 @@ from services.fal_ai import upload_file_to_fal
 
 router = Router(name="process_router")
 
+# Глобальный словарь для блокировки обработки альбомов
+# Ключ: media_group_id, Значение: asyncio.Lock
+_album_locks: Dict[str, asyncio.Lock] = {}
 
 ALL_MODELS = {}
 for category, families in MODEL_CATALOG.items():
@@ -146,40 +149,137 @@ async def step_second_image(message: Message, state: FSMContext, session: AsyncS
 
 @router.message((F.text) | (F.photo) | (F.video))
 async def handle_standard_input(message: Message, state: FSMContext, session: AsyncSession):
+    media_group_id = message.media_group_id
+    
+    # Для альбомов используем блокировку для предотвращения race condition
+    if media_group_id:
+        if media_group_id not in _album_locks:
+            _album_locks[media_group_id] = asyncio.Lock()
+        
+        async with _album_locks[media_group_id]:
+            return await _process_album_message(message, state, session, media_group_id)
+    else:
+        return await _process_single_message(message, state, session)
+
+
+async def _process_album_message(
+    message: Message, 
+    state: FSMContext, 
+    session: AsyncSession,
+    media_group_id: str
+):
+    """Обработка сообщения из альбома с блокировкой"""
     current_state = await state.get_state()
     
-    # Объявляем media_group_id сразу для использования во всей функции
-    media_group_id = message.media_group_id
-
-    # Если уже идет генерация — игнорируем повторные сообщения
-    # НО пропускаем фото из того же альбома (с тем же media_group_id)
-    if current_state == GenState.generating:
-        # Проверяем, есть ли уже данные альбома в state
-        data = await state.get_data()
-        existing_album = data.get("album_photos")
-        
-        # Если это НЕ альбом или альбом уже обрабатывается (есть данные) — игнорируем
-        if not media_group_id or existing_album:
-            logger.info(f"handle_standard_input: генерация уже идет, игнорируем сообщение от {message.from_user.id}")
-            return
-        # Если это часть текущего альбома — продолжаем обработку
-        logger.info(f"handle_standard_input: фото из альбома {media_group_id}, продолжаем сбор референсов")
-
-    if current_state and current_state != GenState.waiting_for_input:
-        logger.info(f"handle_standard_input: в состоянии {current_state}, тип={type(message).__name__}, игнорируем")
+    # Проверяем состояние
+    if current_state and current_state not in [GenState.waiting_for_input, GenState.generating]:
+        logger.info(f"_process_album_message: игнорируем, состояние {current_state}")
         return
-
+    
     user_id = message.from_user.id
     result = await session.execute(select(User).where(User.telegram_id == user_id))
     user = result.scalar_one_or_none()
-
+    
     if not user:
         return
-
+    
     model_id = user.current_model
     if model_id not in ALL_MODELS:
         model_id = "openai/gpt-4o-mini"
+    
+    model_info = ALL_MODELS[model_id]
+    category = model_info.get("category", "gen_text")
+    
+    # Только для изображений
+    if category not in ["gen_image", "gen_nano_banana"]:
+        return
+    
+    # Получаем данные альбома
+    data = await state.get_data()
+    album_photos = data.get("album_photos") or []
+    album_prompt = data.get("album_prompt") or ""
+    
+    logger.info(f"Album [LOCKED]: получено фото, до этого было собрано: {len(album_photos)}")
+    
+    # Добавляем текущее фото
+    photo = message.photo[-1]
+    ref_url = await _get_file_url_or_base64(message.bot, photo.file_id)
+    if ref_url:
+        album_photos.append(ref_url)
+    
+    # Сохраняем caption (промпт) — берем из первого сообщения с текстом
+    if message.caption and not album_prompt:
+        album_prompt = message.caption
+        logger.info(f"Album [LOCKED]: промпт из caption: {album_prompt[:50]}...")
+    
+    # Сохраняем данные в state
+    await state.update_data(album_photos=album_photos, album_prompt=album_prompt)
+    await state.set_state(GenState.generating)
+    
+    logger.info(f"Album [LOCKED]: собрано {len(album_photos)} фото из альбома")
+    
+    # Если это первое фото — ждем остальные
+    if len(album_photos) == 1:
+        logger.info("Album [LOCKED]: первое фото, ждем остальные 1.5 сек...")
+        await asyncio.sleep(1.5)
+        # Перечитываем данные после задержки
+        data = await state.get_data()
+        album_photos = data.get("album_photos") or []
+        logger.info(f"Album [LOCKED]: после ожидания собрано {len(album_photos)} фото")
+    
+    # Если фото меньше 3 — ждем еще немного
+    if len(album_photos) < 3:
+        logger.info(f"Album [LOCKED]: собрано {len(album_photos)} фото, ждем еще 0.5 сек...")
+        await asyncio.sleep(0.5)
+        data = await state.get_data()
+        album_photos = data.get("album_photos") or []
+        logger.info(f"Album [LOCKED]: финальное количество фото: {len(album_photos)}")
+    
+    # Запускаем генерацию с собранными референсами
+    reference_images = album_photos[:3]
+    prompt = album_prompt or ""
+    
+    logger.info(f"Album [LOCKED]: запускаем генерацию с {len(reference_images)} референсами")
+    
+    # Очищаем state альбома
+    await state.update_data(album_photos=None, album_prompt=None)
+    await state.set_state(GenState.waiting_for_input)
+    
+    # Запускаем генерацию
+    await run_image_generation(message, session, prompt, reference_images, state)
+    
+    # Удаляем блокировку
+    if media_group_id in _album_locks:
+        del _album_locks[media_group_id]
 
+
+async def _process_single_message(
+    message: Message, 
+    state: FSMContext, 
+    session: AsyncSession
+):
+    """Обработка одиночного сообщения (не альбом)"""
+    current_state = await state.get_state()
+    
+    if current_state == GenState.generating:
+        logger.info(f"_process_single_message: генерация уже идет, игнорируем")
+        return
+    
+    if current_state and current_state != GenState.waiting_for_input:
+        logger.info(f"_process_single_message: в состоянии {current_state}, игнорируем")
+        return
+    
+    user_id = message.from_user.id
+    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        return
+    
+    model_id = user.current_model
+    if model_id not in ALL_MODELS:
+        model_id = "openai/gpt-4o-mini"
+    
     model_info = ALL_MODELS[model_id]
     category = model_info.get("category", "gen_text")
     if "category" not in model_info:
@@ -189,90 +289,32 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
                     if m["id"] == model_id:
                         category = cat
                         break
-
+    
     # Проверка: текстовые модели должны принимать только текст
     if category in ["gen_text", "gen_search"]:
         if not message.text:
             await message.answer("⚠️ <b>Текстовая модель ожидает текст!</b>\n\nПожалуйста, отправьте ваш запрос текстом.", parse_mode="HTML")
             return
-
+    
     # Проверка: image-to-video модели требуют фото
     is_img_model = "image-to" in model_id or "img2vid" in model_info["name"].lower()
     if category == "gen_video" and is_img_model and not message.photo:
         await message.answer("❌ Эта модель требует <b>фотографию</b>! Прикрепите изображение.", parse_mode="HTML")
         return
-
+    
     # Для изображений — обрабатываем фото и/или текст
     if category in ["gen_image", "gen_nano_banana"]:
-        # Состояние уже установлено в начале функции для альбомов
-        # Для одиночных фото устанавливаем сейчас
-        if not media_group_id:
-            await state.set_state(GenState.generating)
-
-        # Собираем референсы из фото (до 3)
+        await state.set_state(GenState.generating)
+        
         reference_images = []
-
-        if media_group_id:
-            # Это часть альбома — сохраняем в state и ждем остальные фото
-            data = await state.get_data()
-            # Исправление: используем or [] вместо , [] для защиты от None
-            album_photos = data.get("album_photos") or []
-            album_prompt = data.get("album_prompt") or ""
-
-            logger.info(f"Album processing: получено фото в альбоме, всего собрано: {len(album_photos) + 1}")
-
-            # Добавляем текущее фото
+        if message.photo:
             photo = message.photo[-1]
             ref_url = await _get_file_url_or_base64(message.bot, photo.file_id)
             if ref_url:
-                album_photos.append(ref_url)
-
-            # Сохраняем caption (промпт) — берем из первого сообщения с текстом
-            if message.caption and not album_prompt:
-                album_prompt = message.caption
-                logger.info(f"Album processing: промпт из caption: {album_prompt[:50]}...")
-
-            # Сохраняем данные в state
-            await state.update_data(album_photos=album_photos, album_prompt=album_prompt)
-            
-            # Устанавливаем состояние generating после сохранения данных альбома
-            # Это нужно для блокировки других запросов во время сбора фото
-            await state.set_state(GenState.generating)
-
-            # Если это первое сообщение альбома — ждем остальные
-            if len(album_photos) == 1:
-                # Первое фото — ждем 1 секунду на случай получения остальных
-                logger.info("Album processing: первое фото, ждем остальные 1.0 сек...")
-                await asyncio.sleep(1.0)
-                data = await state.get_data()
-                album_photos = data.get("album_photos") or []
-
-            # Если фото еще приходят — ждем
-            if len(album_photos) < 4:  # Максимум 3 фото + 1 проверка
-                # Проверяем, пришли ли еще фото за последнюю секунду
-                logger.info(f"Album processing: собрано {len(album_photos)} фото, ждем еще 0.5 сек...")
-                await asyncio.sleep(0.5)
-                data = await state.get_data()
-                album_photos = data.get("album_photos") or []
-
-            # НЕ очищаем state здесь — очистка будет в run_image_generation
-            logger.info(f"Album processing: финальное количество фото: {len(album_photos)}")
-
-            # Используем собранные фото альбома как референсы
-            reference_images = album_photos[:3]  # Максимум 3 референса
-            prompt = album_prompt or ""
-        else:
-            # Одиночное фото (не альбом)
-            if message.photo:
-                photo = message.photo[-1]
-                ref_url = await _get_file_url_or_base64(message.bot, photo.file_id)
-                if ref_url:
-                    reference_images.append(ref_url)
-
-            # Получаем промпт из текста или caption к фото
-            prompt = message.text or message.caption or ""
-
-        # Если нет ни фото ни текста — просим ввести что-то
+                reference_images.append(ref_url)
+        
+        prompt = message.text or message.caption or ""
+        
         if not reference_images and not prompt:
             await state.set_state(GenState.waiting_for_input)
             await message.answer(
@@ -283,11 +325,10 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
                 parse_mode="HTML"
             )
             return
-
-        # Запускаем генерацию
+        
         await run_image_generation(message, session, prompt, reference_images, state)
         return
-
+    
     await run_simple_generation(message, user, session, model_info, category)
 
 
