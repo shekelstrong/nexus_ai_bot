@@ -197,46 +197,52 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
 
         # Собираем референсы из фото (до 3)
         reference_images = []
-        
+
         # Проверяем, есть ли медиа-группа (альбом)
         media_group_id = message.media_group_id
-        
+
         if media_group_id:
             # Это часть альбома — сохраняем в state и ждем остальные фото
             data = await state.get_data()
-            album_photos = data.get("album_photos", [])
-            album_prompt = data.get("album_prompt", "")
-            
+            # Исправление: используем or [] вместо , [] для защиты от None
+            album_photos = data.get("album_photos") or []
+            album_prompt = data.get("album_prompt") or ""
+
+            logger.info(f"Album processing: получено фото в альбоме, всего собрано: {len(album_photos) + 1}")
+
             # Добавляем текущее фото
             photo = message.photo[-1]
             ref_url = await _get_file_url_or_base64(message.bot, photo.file_id)
             if ref_url:
                 album_photos.append(ref_url)
-            
+
             # Сохраняем caption (промпт) — берем из первого сообщения с текстом
             if message.caption and not album_prompt:
                 album_prompt = message.caption
-            
+                logger.info(f"Album processing: промпт из caption: {album_prompt[:50]}...")
+
             # Сохраняем данные в state
             await state.update_data(album_photos=album_photos, album_prompt=album_prompt)
-            
+
             # Если это первое сообщение альбома — ждем остальные
             if len(album_photos) == 1:
                 # Первое фото — ждем 1 секунду на случай получения остальных
+                logger.info("Album processing: первое фото, ждем остальные 1.0 сек...")
                 await asyncio.sleep(1.0)
                 data = await state.get_data()
-                album_photos = data.get("album_photos", [])
-            
+                album_photos = data.get("album_photos") or []
+
             # Если фото еще приходят — ждем
             if len(album_photos) < 4:  # Максимум 3 фото + 1 проверка
                 # Проверяем, пришли ли еще фото за последнюю секунду
+                logger.info(f"Album processing: собрано {len(album_photos)} фото, ждем еще 0.5 сек...")
                 await asyncio.sleep(0.5)
                 data = await state.get_data()
-                album_photos = data.get("album_photos", [])
-            
-            # Очищаем state от временных данных альбома
-            await state.update_data(album_photos=None, album_prompt=None)
-            
+                album_photos = data.get("album_photos") or []
+
+            # НЕ очищаем state здесь — очистка будет в run_image_generation
+            logger.info(f"Album processing: финальное количество фото: {len(album_photos)}")
+
             # Используем собранные фото альбома как референсы
             reference_images = album_photos[:3]  # Максимум 3 референса
             prompt = album_prompt or ""
@@ -247,7 +253,7 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
                 ref_url = await _get_file_url_or_base64(message.bot, photo.file_id)
                 if ref_url:
                     reference_images.append(ref_url)
-            
+
             # Получаем промпт из текста или caption к фото
             prompt = message.text or message.caption or ""
 
@@ -572,8 +578,9 @@ async def run_image_generation(
         except:
             await message.answer(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
     finally:
-        # Сбрасываем состояние после генерации
+        # Очищаем state от временных данных альбома (если использовался)
         if state:
+            await state.update_data(album_photos=None, album_prompt=None)
             await state.set_state(GenState.waiting_for_input)
 
 
