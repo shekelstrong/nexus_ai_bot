@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from keyboards.inline import main_menu, model_families_menu, models_list_menu, back_to_menu_kb, image_gen_mode_kb, references_ready_kb
+from keyboards.inline import main_menu, model_families_menu, models_list_menu, back_to_menu_kb, image_gen_mode_kb, references_ready_kb, nano_banana_menu
 from database.models import User
 from model_config import MODEL_CATALOG
 from states.generation_states import GenState
@@ -28,17 +28,26 @@ async def select_category_callback(callback: CallbackQuery):
         category = callback.data.split(":")[1]
         titles = {
             "gen_text": "📝 <b>Текстовые модели</b>",
+            "gen_nano_banana": "🍌 <b>Nano Banana</b>",
             "gen_image": "🎨 <b>Генерация изображений</b>",
             "gen_video": "🎬 <b>Генерация видео</b>",
             "gen_search": "🔍 <b>Поисковые модели</b>"
         }
         title = titles.get(category, "🤖 Выберите категорию")
-        
-        await callback.message.edit_text(
-            f"{title}\nВыберите семейство моделей:",
-            reply_markup=model_families_menu(category),
-            parse_mode="HTML"
-        )
+
+        # Для Nano Banana показываем сразу модели, без выбора семейства
+        if category == "gen_nano_banana":
+            await callback.message.edit_text(
+                f"{title}\nВыберите модель:",
+                reply_markup=nano_banana_menu(),
+                parse_mode="HTML"
+            )
+        else:
+            await callback.message.edit_text(
+                f"{title}\nВыберите семейство моделей:",
+                reply_markup=model_families_menu(category),
+                parse_mode="HTML"
+            )
     except Exception as e:
         await callback.message.answer("⚠️ Меню устарело. Вызовите /start")
     await callback.answer()
@@ -114,6 +123,15 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
         await state.set_state(GenState.waiting_for_input)
     elif category == "gen_image":
         # Все модели изображений — предлагаем выбор режима
+        text += "🎨 Выберите режим генерации:"
+        await state.clear()
+        await state.set_state(GenState.waiting_for_input) # Сбрасываем состояние
+        await callback.message.delete()
+        await callback.message.answer(text, reply_markup=image_gen_mode_kb(), parse_mode="HTML")
+        await callback.answer()
+        return
+    elif category == "gen_nano_banana":
+        # Nano Banana — тоже генерация изображений, предлагаем выбор режима
         text += "🎨 Выберите режим генерации:"
         await state.clear()
         await state.set_state(GenState.waiting_for_input) # Сбрасываем состояние

@@ -4,6 +4,9 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 def main_menu():
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
+            InlineKeyboardButton(text="🍌 Nano Banana", callback_data="cat:gen_nano_banana"),
+        ],
+        [
             InlineKeyboardButton(text="💬 Текст", callback_data="cat:gen_text"),
             InlineKeyboardButton(text="🌐 Perplexity", callback_data="cat:gen_search")
         ],
@@ -34,6 +37,16 @@ def cancel_generation_menu():
 
 def back_to_menu_kb():
     kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
+    ])
+    return kb
+
+def nano_banana_menu():
+    """Клавиатура с моделями Nano Banana"""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Nano Banana Pro (8🍌)", callback_data="set_model:google/gemini-3-pro-image-preview")],
+        [InlineKeyboardButton(text="Nano Banana (3🍌)", callback_data="set_model:google/gemini-2.5-flash-image")],
+        [InlineKeyboardButton(text="Nano Banana Preview (3🍌)", callback_data="set_model:google/gemini-2.5-flash-image-preview")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
     ])
     return kb
