@@ -147,17 +147,23 @@ async def step_second_image(message: Message, state: FSMContext, session: AsyncS
 @router.message((F.text) | (F.photo) | (F.video))
 async def handle_standard_input(message: Message, state: FSMContext, session: AsyncSession):
     current_state = await state.get_state()
+    
+    # Объявляем media_group_id сразу для использования во всей функции
+    media_group_id = message.media_group_id
 
-    # Если уже идет генерация — игнорируем повторные сообщения (защита от "альбомов")
+    # Если уже идет генерация — игнорируем повторные сообщения
+    # НО пропускаем фото из того же альбома (с тем же media_group_id)
     if current_state == GenState.generating:
-        logger.info(f"handle_standard_input: генерация уже идет, игнорируем сообщение от {message.from_user.id}")
-        return
-
-    # Для фото с media_group_id: проверяем, не обрабатываем ли уже этот альбом
-    if message.media_group_id and current_state == GenState.waiting_for_input:
-        # Устанавливаем блокировку ПЕРЕД обработкой альбома
-        await state.set_state(GenState.generating)
-        logger.info(f"handle_standard_input: альбом {message.media_group_id}, устанавливаем блокировку")
+        # Проверяем, есть ли уже данные альбома в state
+        data = await state.get_data()
+        existing_album = data.get("album_photos")
+        
+        # Если это НЕ альбом или альбом уже обрабатывается (есть данные) — игнорируем
+        if not media_group_id or existing_album:
+            logger.info(f"handle_standard_input: генерация уже идет, игнорируем сообщение от {message.from_user.id}")
+            return
+        # Если это часть текущего альбома — продолжаем обработку
+        logger.info(f"handle_standard_input: фото из альбома {media_group_id}, продолжаем сбор референсов")
 
     if current_state and current_state != GenState.waiting_for_input:
         logger.info(f"handle_standard_input: в состоянии {current_state}, тип={type(message).__name__}, игнорируем")
@@ -206,9 +212,6 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
         # Собираем референсы из фото (до 3)
         reference_images = []
 
-        # Проверяем, есть ли медиа-группа (альбом)
-        media_group_id = message.media_group_id
-
         if media_group_id:
             # Это часть альбома — сохраняем в state и ждем остальные фото
             data = await state.get_data()
@@ -231,6 +234,10 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
 
             # Сохраняем данные в state
             await state.update_data(album_photos=album_photos, album_prompt=album_prompt)
+            
+            # Устанавливаем состояние generating после сохранения данных альбома
+            # Это нужно для блокировки других запросов во время сбора фото
+            await state.set_state(GenState.generating)
 
             # Если это первое сообщение альбома — ждем остальные
             if len(album_photos) == 1:
