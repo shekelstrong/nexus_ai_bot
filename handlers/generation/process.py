@@ -33,7 +33,8 @@ ALL_MODELS = {}
 for category, families in MODEL_CATALOG.items():
     for family_key, family_data in families.items():
         for model in family_data["models"]:
-            ALL_MODELS[model["id"]] = model
+            # Сохраняем модель с категорией
+            ALL_MODELS[model["id"]] = {**model, "category": category}
 
 
 _MD_LINK_RE = re.compile(r"^\s*\[[^\]]+\]\((https?://[^)\s]+)\)\s*$")
@@ -205,11 +206,12 @@ async def _process_album_message(
         
         model_info = ALL_MODELS[model_id]
         category = model_info.get("category", "gen_text")
+        
         logger.info(f"_process_album_message: category={category}")
         
         # Только для изображений
         if category not in ["gen_image", "gen_nano_banana"]:
-            logger.info(f"_process_album_message: не изображение, игнорируем")
+            logger.info(f"_process_album_message: не изображение (category={category}), игнорируем")
             return
         
         # Получаем данные альбома
