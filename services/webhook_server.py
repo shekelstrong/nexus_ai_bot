@@ -302,7 +302,11 @@ class WebhookServer:
             logger.warning(f"⚠️ Настройте SSL_CERT_PATH и SSL_KEY_PATH в .env файле")
         
         # Выводим полный URL вебхука для настройки в Platega
-        webhook_url = f"{protocol}://{BASE_URL}/webhook/platega"
+        # BASE_URL уже содержит протокол (https://hexus.sbs), поэтому просто добавляем путь
+        if BASE_URL.startswith("http://") or BASE_URL.startswith("https://"):
+            webhook_url = f"{BASE_URL}/webhook/platega"
+        else:
+            webhook_url = f"{protocol}://{BASE_URL}/webhook/platega"
         logger.info(f"   🔗 Platega webhook URL: {webhook_url}")
         logger.info(f"   Health check: GET /health")
         
