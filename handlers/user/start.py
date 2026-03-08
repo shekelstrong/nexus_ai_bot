@@ -18,16 +18,14 @@ router = Router(name="start_router")
 async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
     await state.clear()
 
-    # Реферальная система: достаем ID пригласившего из ссылки
+    # Реферальная система: достаем referral_code из ссылки
     args = message.text.split()
-    referrer_telegram_id = None
-    if len(args) > 1 and args[1].isdigit():
-        referrer_telegram_id = int(args[1])
-        if referrer_telegram_id == message.from_user.id:
-            referrer_telegram_id = None
+    referrer_code = None
+    if len(args) > 1:
+        referrer_code = args[1]
     
     # ЛОГИРОВАНИЕ для отладки
-    logger.info(f"🔍 /start от {message.from_user.id} (@{message.from_user.username}), реферер: {referrer_telegram_id}")
+    logger.info(f"🔍 /start от {message.from_user.id} (@{message.from_user.username}), реферер (code): {referrer_code}")
 
     # Проверка, есть ли уже такой пользователь в базе
     result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
@@ -38,18 +36,20 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
     if not user:
         is_new_user = True
         
-        # Находим внутреннего referrer_id по telegram_id
+        # Находим рефовода по referral_code (НЕ по telegram_id!)
         referrer_internal_id = None
         referrer_user = None
-        if referrer_telegram_id:
+        if referrer_code:
             ref_result = await session.execute(
-                select(User).where(User.telegram_id == referrer_telegram_id)
+                select(User).where(User.referral_code == referrer_code)
             )
             referrer_user = ref_result.scalar_one_or_none()
-            logger.info(f"🔍 Поиск рефовода по TG ID {referrer_telegram_id}: {'найден' if referrer_user else 'НЕ НАЙДЕН'}")
+            logger.info(f"🔍 Поиск рефовода по referral_code '{referrer_code}': {'найден' if referrer_user else 'НЕ НАЙДЕН'}")
             if referrer_user:
                 referrer_internal_id = referrer_user.id  # Внутренний ID для FK
-                logger.info(f"✅ Рефовод найден: internal_id={referrer_internal_id}, TG={referrer_user.telegram_id}, @{referrer_user.username}")
+                logger.info(f"✅ Рефовод найден: internal_id={referrer_internal_id}, TG={referrer_user.telegram_id}, @{referrer_user.username}, code={referrer_user.referral_code}")
+            else:
+                logger.warning(f"⚠️ referral_code '{referrer_code}' не найден в базе")
 
         # Создаем нового пользователя с генерацией обязательного referral_code
         user = User(
@@ -63,7 +63,7 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
         session.add(user)
         try:
             await session.commit()
-            logger.info(f"✅ Пользователь {message.from_user.id} сохранен в БД, referrer_id={user.referrer_id}")
+            logger.info(f"✅ Пользователь {message.from_user.id} сохранен в БД, referrer_id={user.referrer_id}, referral_code={user.referral_code}")
 
             # Уведомляем реферера, если он есть
             if referrer_user:
