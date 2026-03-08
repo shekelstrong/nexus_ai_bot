@@ -148,6 +148,11 @@ async def step_second_image(message: Message, state: FSMContext, session: AsyncS
 async def handle_standard_input(message: Message, state: FSMContext, session: AsyncSession):
     current_state = await state.get_state()
 
+    # Если уже идет генерация — игнорируем повторные сообщения (защита от "альбомов")
+    if current_state == GenState.generating:
+        logger.info(f"handle_standard_input: генерация уже идет, игнорируем сообщение от {message.from_user.id}")
+        return
+    
     if current_state and current_state != GenState.waiting_for_input:
         logger.info(f"handle_standard_input: в состоянии {current_state}, тип={type(message).__name__}, игнорируем")
         return
@@ -187,6 +192,9 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
 
     # Для изображений — обрабатываем фото и/или текст
     if category in ["gen_image", "gen_nano_banana"]:
+        # Ставим состояние "генерация идет" для блокировки повторных запросов
+        await state.set_state(GenState.generating)
+        
         # Собираем референсы из фото (до 3)
         reference_images = []
         if message.photo:
@@ -201,6 +209,7 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
         
         # Если нет ни фото ни текста — просим ввести что-то
         if not reference_images and not prompt:
+            await state.set_state(GenState.waiting_for_input)
             await message.answer(
                 "⚠️ <b>Отправьте текст и/или фото!</b>\n\n"
                 "Для генерации изображения нужен хотя бы один из параметров:\n"
@@ -211,7 +220,7 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
             return
         
         # Запускаем генерацию
-        await run_image_generation(message, session, prompt, reference_images)
+        await run_image_generation(message, session, prompt, reference_images, state)
         return
 
     await run_simple_generation(message, user, session, model_info, category)
@@ -405,19 +414,21 @@ async def run_image_generation(
     session: AsyncSession,
     prompt: str,
     reference_images: list = None,
+    state: FSMContext = None,
 ):
     """
     Генерация изображения с поддержкой референсов.
-    
+
     Args:
         message: Сообщение с промптом
         session: DB сессия
         prompt: Текстовый промпт
         reference_images: Список URL/base64 референсов (до 3)
+        state: FSM state для сброса после генерации
     """
     if reference_images is None:
         reference_images = []
-    
+
     user_id = message.from_user.id
     result = await session.execute(select(User).where(User.telegram_id == user_id))
     user = result.scalar_one_or_none()
@@ -427,7 +438,9 @@ async def run_image_generation(
     cost = model_info.get("cost", 1)
 
     if user.tokens_balance < cost:
-        await message.answer(f"❌ Недостаточно бананов! Нужно {cost}.", parse_mode="HTML")
+        if state:
+            await state.set_state(GenState.waiting_for_input)
+        await message.answer(f"❌ Недостаточно токенов! Нужно {cost}.", parse_mode="HTML")
         return
 
     user.tokens_balance -= cost
@@ -437,13 +450,13 @@ async def run_image_generation(
         f"⏳ <b>{model_info['name']}</b>\nГенерирую изображение...",
         parse_mode="HTML"
     )
-    
+
     api = APIClient()
 
     try:
         # Вызываем генератор с референсами
         res = await api.generate_image(model_info["id"], prompt, reference_images=reference_images)
-        
+
         if not res:
             raise Exception("Ошибка генерации изображения")
 
@@ -514,6 +527,10 @@ async def run_image_generation(
             await status_msg.edit_text(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
         except:
             await message.answer(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
+    finally:
+        # Сбрасываем состояние после генерации
+        if state:
+            await state.set_state(GenState.waiting_for_input)
 
 
 async def run_simple_generation(message: Message, user: User, session: AsyncSession, model_info: dict, category: str):
