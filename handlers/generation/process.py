@@ -152,7 +152,13 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
     if current_state == GenState.generating:
         logger.info(f"handle_standard_input: генерация уже идет, игнорируем сообщение от {message.from_user.id}")
         return
-    
+
+    # Для фото с media_group_id: проверяем, не обрабатываем ли уже этот альбом
+    if message.media_group_id and current_state == GenState.waiting_for_input:
+        # Устанавливаем блокировку ПЕРЕД обработкой альбома
+        await state.set_state(GenState.generating)
+        logger.info(f"handle_standard_input: альбом {message.media_group_id}, устанавливаем блокировку")
+
     if current_state and current_state != GenState.waiting_for_input:
         logger.info(f"handle_standard_input: в состоянии {current_state}, тип={type(message).__name__}, игнорируем")
         return
@@ -192,8 +198,10 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
 
     # Для изображений — обрабатываем фото и/или текст
     if category in ["gen_image", "gen_nano_banana"]:
-        # Ставим состояние "генерация идет" для блокировки повторных запросов
-        await state.set_state(GenState.generating)
+        # Состояние уже установлено в начале функции для альбомов
+        # Для одиночных фото устанавливаем сейчас
+        if not media_group_id:
+            await state.set_state(GenState.generating)
 
         # Собираем референсы из фото (до 3)
         reference_images = []
