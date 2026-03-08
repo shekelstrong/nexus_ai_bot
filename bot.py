@@ -17,7 +17,6 @@ from middlewares.database import DbSessionMiddleware
 from handlers import user
 from handlers.admin import admin_panel, notifications
 from handlers.generation import selection, process
-from handlers.user import payment
 
 # Импорт вебхук сервера
 from services.webhook_server import webhook_server
