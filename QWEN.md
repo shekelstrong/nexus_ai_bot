@@ -12,6 +12,7 @@
 - **Premium subscriptions**: FREE, BASIC, PRO, VIP, ELITE tiers
 - **Payment integration**: Platega payment system
 - **Message history**: Persistent conversation context with models
+- **Video packages**: Separate currency for video generations (Kling, Veo, Wan)
 
 ## Tech Stack
 
@@ -200,6 +201,7 @@ REF_LEVELS = [0.15, 0.10, 0.05]  # Referral reward percentages
 ### Model Categories (model_config.py)
 - `gen_text`: 50+ text models (GPT, Claude, Gemini, DeepSeek, etc.)
 - `gen_image`: Flux, Stable Diffusion, Seedream, Gemini Image
+- `gen_nano_banana`: Nano Banana Pro image models
 - `gen_video`: Kling, Veo, Wan (via FAL AI)
 - `gen_search`: Perplexity Sonar models
 
@@ -223,3 +225,5 @@ REF_LEVELS = [0.15, 0.10, 0.05]  # Referral reward percentages
 - Russian language UI (texts in `config.py`)
 - Debug handler logs all updates before routing
 - Logs written to `logs/bot.log`
+- Album photo handling with locks to prevent race conditions
+- Video generations use separate `video_generations_balance` currency
