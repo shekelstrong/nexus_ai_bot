@@ -158,16 +158,16 @@ async def step_second_image(message: Message, state: FSMContext, session: AsyncS
 async def handle_standard_input(message: Message, state: FSMContext, session: AsyncSession):
     # Отладочное логирование
     logger.info(f"handle_standard_input ВЫЗВАН: text={bool(message.text)}, photo={bool(message.photo)}, video={bool(message.video)}, media_group_id={message.media_group_id}")
-    
+
     media_group_id = message.media_group_id
-    
+
     # Для альбомов используем блокировку для предотвращения race condition
     if media_group_id:
         logger.info(f"Album: создаем/получаем lock для {media_group_id}")
         if media_group_id not in _album_locks:
             _album_locks[media_group_id] = asyncio.Lock()
             logger.info(f"Album: создан новый lock для {media_group_id}")
-        
+
         logger.info(f"Album: захватываем lock для {media_group_id}")
         async with _album_locks[media_group_id]:
             logger.info(f"Album: lock захвачен для {media_group_id}")
@@ -186,6 +186,7 @@ async def _process_album_message(
     """
     Обработка сообщения из альбома с блокировкой.
     Собирает все фото из альбома (максимум 3) и запускает генерацию ОДИН раз.
+    Блокировка удерживается ДО КОНЦА генерации.
     """
     try:
         logger.info(f"_process_album_message: НАЧАЛО, media_group_id={media_group_id}")
@@ -253,39 +254,32 @@ async def _process_album_message(
 
         logger.info(f"Album: сохранено в state, собрано {len(album_photos)} фото из альбома")
 
-        # Проверяем, собрали ли все фото (максимум 3) или это последнее сообщение в альбоме
-        # Если уже собрали 3 фото или больше — запускаем генерацию
-        if len(album_photos) >= 3:
-            logger.info(f"Album: собрано максимум фото (3), запускаем генерацию")
-            await _run_album_generation(message, session, album_photos, album_prompt, state, media_group_id)
-            return
-
-        # Ждем остальные фото (но не больше 3 всего)
+        # Ждем остальные фото от Telegram (они приходят с задержкой)
+        # Telegram обычно отправляет все фото альбома в течение 1-2 секунд
         wait_count = 0
-        max_wait_cycles = 15  # 15 * 0.3сек = 4.5 сек
-        while len(album_photos) < 3 and wait_count < max_wait_cycles:
-            await asyncio.sleep(0.3)
+        max_wait_cycles = 20  # 20 * 0.5сек = 10 сек - достаточно для получения всех фото
+        while wait_count < max_wait_cycles:
+            await asyncio.sleep(0.5)
             wait_count += 1
 
             # Перечитываем данные
             data = await state.get_data()
             album_photos = data.get("album_photos") or []
-            logger.info(f"Album: после ожидания {wait_count * 0.3:.1f}сек собрано {len(album_photos)} фото")
+            logger.info(f"Album: после ожидания {wait_count * 0.5:.1f}сек собрано {len(album_photos)} фото")
+            
+            # Если собрали 3 фото - можно запускать генерацию
+            if len(album_photos) >= 3:
+                logger.info(f"Album: собрано максимум фото (3)")
+                break
 
-        if wait_count >= max_wait_cycles:
-            logger.info(f"Album: таймаут ожидания ({ALBUM_WAIT_TIMEOUT}сек)")
-
-        # Запускаем генерацию с собранными референсами (даже если их меньше 3)
+        # Запускаем генерацию с собранными референсами
+        # Блокировка все еще удерживается!
         await _run_album_generation(message, session, album_photos, album_prompt, state, media_group_id)
 
     except Exception as e:
         logger.exception(f"_process_album_message: ИСКЛЮЧЕНИЕ: {e}")
         raise
-    finally:
-        # Удаляем блокировку
-        if media_group_id in _album_locks:
-            del _album_locks[media_group_id]
-            logger.info(f"Album: блокировка удалена для {media_group_id}")
+    # Блокировка будет удалена автоматически при выходе из async with в handle_standard_input
 
 
 async def _run_album_generation(
@@ -329,8 +323,8 @@ async def _run_album_generation(
 
     logger.info(f"Album: генерация завершена")
     
+    # Блокировка удалится автоматически при выходе из async with в handle_standard_input
     # Удаляем из множества завершенных через некоторое время (очистка памяти)
-    # Это нужно, чтобы media_group_id могли переиспользоваться (хотя они уникальны)
     asyncio.create_task(_cleanup_completed_album(media_group_id))
 
 
