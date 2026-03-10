@@ -1,5 +1,3 @@
-# handlers/generation/process.py
-
 import asyncio
 import base64
 import aiohttp
@@ -7,13 +5,11 @@ import os
 import re
 import tempfile
 from typing import Optional, Dict
-
 from aiogram import Router, F
 from aiogram.types import Message, BufferedInputFile, FSInputFile
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
-
 from database.models import User, Generation, GenerationStatus, MessageHistory
 from services.api_client import APIClient
 from keyboards.inline import main_menu, back_to_menu_kb
@@ -22,105 +18,81 @@ from model_config import MODEL_CATALOG
 from states.generation_states import GenState
 from services.fal_ai import upload_file_to_fal
 
-
 router = Router(name="process_router")
 
-# Глобальный словарь для блокировки обработки альбомов
-# Ключ: media_group_id, Значение: asyncio.Lock
-_album_locks: Dict[str, asyncio.Lock] = {}
-
-# Множество для отслеживания завершенных альбомов (чтобы не запустить генерацию дважды)
+# Словари для сбора альбомов
+_album_messages: Dict[str, list] = {}
+_album_timers: Dict[str, asyncio.Task] = {}
 _completed_albums: set = set()
-
-# Максимальное время ожидания сбора всех фото из альбома (сек)
-ALBUM_WAIT_TIMEOUT = 3.0
+ALBUM_WAIT_TIMEOUT = 2.5
 
 ALL_MODELS = {}
 for category, families in MODEL_CATALOG.items():
     for family_key, family_data in families.items():
         for model in family_data["models"]:
-            # Сохраняем модель с категорией
             ALL_MODELS[model["id"]] = {**model, "category": category}
 
-
-_MD_LINK_RE = re.compile(r"^\s*\[[^\]]+\]\((https?://[^)\s]+)\)\s*$")
-_URL_RE = re.compile(r"(https?://[^\s\])>\"']+)")
-
+MD_LINK_RE = re.compile(r"\[[^\]]+\]\((https?://[^\s\)]+)\)")
+URL_RE = re.compile(r"(https?://[^\s\)]+)")
 
 def normalize_url(raw: Optional[str]) -> Optional[str]:
-    """
-    Приводит строку к «чистому» URL.
-    Поддерживает случаи, когда URL пришёл в Markdown-виде: [text](https://...)
-    """
     if not raw:
         return None
-
     s = str(raw).strip()
-
-    m = _MD_LINK_RE.match(s)
+    m = MD_LINK_RE.match(s)
     if m:
         url = m.group(1)
     else:
-        m2 = _URL_RE.search(s)
+        m2 = URL_RE.search(s)
         if m2:
             url = m2.group(1)
         else:
             url = s
 
-    # Дополнительная очистка URL от недопустимых символов
-    # Telegram не принимает URL с пробелами и некоторыми спецсимволами
     url = url.replace(" ", "%20")
     url = url.replace("{", "%7B").replace("}", "%7D")
-    url = url.replace("|", "%7C")
     url = url.replace("\\", "/")
-    url = url.replace("^", "%5E")
+    url = url.replace("\"", "%22")
     url = url.replace("`", "%60")
-
     return url
-
 
 @router.message(GenState.waiting_for_first_image, F.photo)
 async def step_first_image(message: Message, state: FSMContext, session: AsyncSession):
     photo = message.photo[-1]
     file_id = photo.file_id
-
     result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
     user = result.scalar_one_or_none()
+    if not user: return
     model_id = user.current_model
 
     await state.update_data(first_image_file_id=file_id)
 
     if "motion-control" in model_id:
         await message.answer(
-            "2️⃣ <b>Шаг 2:</b> Отлично! Теперь отправьте <b>видео</b> (референс движения).",
+            "<b>Шаг 2:</b> Отлично! Теперь отправьте <b>видео</b> (референс движения).",
             parse_mode="HTML",
         )
         await state.set_state(GenState.waiting_for_reference_video)
     elif "first-last" in model_id:
         await message.answer(
-            "2️⃣ <b>Шаг 2:</b> Принято! Теперь отправьте <b>второе изображение</b> (конечный кадр).",
+            "<b>Шаг 2:</b> Принято! Теперь отправьте <b>второе изображение</b> (конечный кадр).",
             parse_mode="HTML",
         )
         await state.set_state(GenState.waiting_for_second_image)
     else:
-        await message.answer("📸 Фото принято. Добавьте описание (промпт) или нажмите кнопку.", reply_markup=back_to_menu_kb())
+        await message.answer("✅ Фото принято. Добавьте описание (промпт) или нажмите кнопку.", reply_markup=back_to_menu_kb())
         await state.set_state(GenState.waiting_for_input)
-
 
 @router.message(GenState.waiting_for_reference_video, F.video)
 async def step_reference_video(message: Message, state: FSMContext, session: AsyncSession):
     video = message.video
-    logger.info(
-        f"step_reference_video: получено видео, file_id={video.file_id}, размер={video.file_size / (1024*1024):.2f}MB"
-    )
-
-    if video.file_size > 50 * 1024 * 1024:
-        await message.answer("❌ Видео слишком большое! Пожалуйста, до 50 МБ.")
+    logger.info(f"step_reference_video: получено видео, file_id={video.file_id}, размер {video.file_size / (1024*1024):.2f} MB")
+    if video.file_size > 50*1024*1024:
+        await message.answer("❌ Видео слишком большое! Пожалуйста, до 50 MB.")
         return
 
     data = await state.get_data()
     first_image_file_id = data.get("first_image_file_id")
-
     if not first_image_file_id:
         await message.answer("❌ Ошибка: потеряно первое изображение. Начните заново.")
         await state.clear()
@@ -129,14 +101,9 @@ async def step_reference_video(message: Message, state: FSMContext, session: Asy
     prompt = message.caption or "An african american woman dancing"
     await state.update_data(prompt=prompt)
 
-    logger.info(
-        f"step_reference_video: запускаем complex_generation, first_image={first_image_file_id}, "
-        f"video={video.file_id}, prompt='{prompt}'"
-    )
-
+    logger.info(f"step_reference_video: запускаем complex_generation, first_image={first_image_file_id}, video={video.file_id}, prompt={prompt}")
     await run_complex_generation(message, session, first_image_file_id, video_file_id=video.file_id, prompt=prompt)
     await state.clear()
-
 
 @router.message(GenState.waiting_for_second_image, F.photo)
 async def step_second_image(message: Message, state: FSMContext, session: AsyncSession):
@@ -153,216 +120,126 @@ async def step_second_image(message: Message, state: FSMContext, session: AsyncS
     await run_complex_generation(message, session, first_image_file_id, second_image_file_id=photo.file_id, prompt=prompt)
     await state.clear()
 
-
 @router.message((F.text) | (F.photo) | (F.video))
 async def handle_standard_input(message: Message, state: FSMContext, session: AsyncSession):
-    # Отладочное логирование
     logger.info(f"handle_standard_input ВЫЗВАН: text={bool(message.text)}, photo={bool(message.photo)}, video={bool(message.video)}, media_group_id={message.media_group_id}")
-
     media_group_id = message.media_group_id
 
-    # Для альбомов используем блокировку для предотвращения race condition
     if media_group_id:
-        logger.info(f"Album: создаем/получаем lock для {media_group_id}")
-        if media_group_id not in _album_locks:
-            _album_locks[media_group_id] = asyncio.Lock()
-            logger.info(f"Album: создан новый lock для {media_group_id}")
+        if media_group_id in _completed_albums:
+            return
 
-        logger.info(f"Album: захватываем lock для {media_group_id}")
-        async with _album_locks[media_group_id]:
-            logger.info(f"Album: lock захвачен для {media_group_id}")
-            return await _process_album_message(message, state, session, media_group_id)
+        if media_group_id not in _album_messages:
+            _album_messages[media_group_id] = []
+        
+        _album_messages[media_group_id].append(message)
+
+        if media_group_id not in _album_timers:
+            # Запускаем фоновую задачу-таймер для сбора всего альбома
+            _album_timers[media_group_id] = asyncio.create_task(
+                _process_album_task(message, state, session, media_group_id)
+            )
     else:
         logger.info("Single message: обрабатываем как одиночное")
         return await _process_single_message(message, state, session)
 
-
-async def _process_album_message(
-    message: Message,
-    state: FSMContext,
-    session: AsyncSession,
-    media_group_id: str
-):
-    """
-    Обработка сообщения из альбома с блокировкой.
-    Собирает все фото из альбома (максимум 3) и запускает генерацию ОДИН раз.
-    Блокировка удерживается ДО КОНЦА генерации.
-    """
+async def _process_album_task(message: Message, state: FSMContext, session: AsyncSession, media_group_id: str):
     try:
-        logger.info(f"_process_album_message: НАЧАЛО, media_group_id={media_group_id}")
+        # Ждем пока соберутся все фото альбома от Telegram
+        await asyncio.sleep(ALBUM_WAIT_TIMEOUT)
+        
+        _completed_albums.add(media_group_id)
+        messages = _album_messages.pop(media_group_id, [])
+        if media_group_id in _album_timers:
+            del _album_timers[media_group_id]
 
-        # Проверяем, не была ли уже завершена генерация для этого альбома
-        if media_group_id in _completed_albums:
-            logger.info(f"Album: альбом {media_group_id} уже обработан, игнорируем")
+        if not messages:
             return
 
         current_state = await state.get_state()
-        logger.info(f"_process_album_message: current_state={current_state}")
-
-        # Проверяем состояние
         if current_state and current_state not in [GenState.waiting_for_input, GenState.generating]:
-            logger.info(f"_process_album_message: игнорируем, состояние {current_state}")
             return
 
         user_id = message.from_user.id
         result = await session.execute(select(User).where(User.telegram_id == user_id))
         user = result.scalar_one_or_none()
-        logger.info(f"_process_album_message: user={user is not None}")
-
         if not user:
-            logger.warning(f"_process_album_message: пользователь не найден")
             return
 
         model_id = user.current_model
-        logger.info(f"_process_album_message: model_id={model_id}")
-
         if model_id not in ALL_MODELS:
             model_id = "openai/gpt-4o-mini"
-
         model_info = ALL_MODELS[model_id]
         category = model_info.get("category", "gen_text")
 
-        logger.info(f"_process_album_message: category={category}")
-
-        # Только для изображений
         if category not in ["gen_image", "gen_nano_banana"]:
-            logger.info(f"_process_album_message: не изображение (category={category}), игнорируем")
+            logger.info(f"Album: не изображение (category={category}), игнорируем")
             return
 
-        # Получаем данные альбома
-        data = await state.get_data()
-        album_photos = data.get("album_photos") or []
-        album_prompt = data.get("album_prompt") or ""
-
-        logger.info(f"Album: получено фото, до этого было собрано: {len(album_photos)}")
-
-        # Добавляем текущее фото
-        photo = message.photo[-1]
-        ref_url = await _get_file_url_or_base64(message.bot, photo.file_id)
-        if ref_url:
-            album_photos.append(ref_url)
-            logger.info(f"Album: добавлено фото, всего: {len(album_photos)}")
-
-        # Сохраняем caption (промпт) — берем из первого сообщения с текстом
-        if message.caption and not album_prompt:
-            album_prompt = message.caption
-            logger.info(f"Album: промпт из caption: {album_prompt[:50]}...")
-
-        # Сохраняем данные в state
-        await state.update_data(album_photos=album_photos, album_prompt=album_prompt)
         await state.set_state(GenState.generating)
 
-        logger.info(f"Album: сохранено в state, собрано {len(album_photos)} фото из альбома")
+        album_photos = []
+        album_prompt = ""
 
-        # Ждем остальные фото от Telegram (они приходят с задержкой)
-        # Telegram обычно отправляет все фото альбома в течение 1-2 секунд
-        wait_count = 0
-        max_wait_cycles = 20  # 20 * 0.5сек = 10 сек - достаточно для получения всех фото
-        while wait_count < max_wait_cycles:
-            await asyncio.sleep(0.5)
-            wait_count += 1
-
-            # Перечитываем данные
-            data = await state.get_data()
-            album_photos = data.get("album_photos") or []
-            logger.info(f"Album: после ожидания {wait_count * 0.5:.1f}сек собрано {len(album_photos)} фото")
+        # Проходимся по всем собранным сообщениям из альбома
+        for msg in messages:
+            if msg.photo:
+                photo = msg.photo[-1]
+                ref_url = await _get_file_url_or_base64(message.bot, photo.file_id)
+                if ref_url:
+                    album_photos.append(ref_url)
             
-            # Если собрали 3 фото - можно запускать генерацию
-            if len(album_photos) >= 3:
-                logger.info(f"Album: собрано максимум фото (3)")
-                break
+            if msg.caption and not album_prompt:
+                album_prompt = msg.caption
+            elif msg.text and not album_prompt:
+                album_prompt = msg.text
 
-        # Запускаем генерацию с собранными референсами
-        # Блокировка все еще удерживается!
-        await _run_album_generation(message, session, album_photos, album_prompt, state, media_group_id)
+        reference_images = album_photos[:3]
+        prompt = album_prompt or ""
+
+        logger.info(f"Album: запускаем генерацию с {len(reference_images)} референсами, prompt='{prompt[:30]}'")
+
+        await state.set_state(GenState.waiting_for_input)
+        await run_image_generation(message, session, prompt, reference_images, state)
 
     except Exception as e:
-        logger.exception(f"_process_album_message: ИСКЛЮЧЕНИЕ: {e}")
-        raise
-    # Блокировка будет удалена автоматически при выходе из async with в handle_standard_input
+        logger.exception(f"Album task error: {e}")
+        await state.set_state(GenState.waiting_for_input)
+    finally:
+        asyncio.create_task(cleanup_completed_album(media_group_id))
 
-
-async def _run_album_generation(
-    message: Message,
-    session: AsyncSession,
-    album_photos: list,
-    album_prompt: str,
-    state: FSMContext,
-    media_group_id: str
-):
-    """
-    Запускает генерацию изображения по альбому.
-    Вызывается только ОДИН раз после сбора всех фото.
-    """
-    global _completed_albums
-    
-    # Проверяем флаг, чтобы не запустить генерацию дважды
-    data = await state.get_data()
-    if data.get("album_generation_started"):
-        logger.info("Album: генерация уже запущена, пропускаем")
-        return
-
-    # Ставим флаг, что генерация началась
-    await state.update_data(album_generation_started=True)
-
-    # Берем максимум 3 референса
-    reference_images = album_photos[:3]
-    prompt = album_prompt or ""
-
-    logger.info(f"Album: запускаем генерацию с {len(reference_images)} референсами, prompt='{prompt[:30] if prompt else 'None'}...'")
-
-    # Помечаем альбом как завершенный (до генерации, чтобы избежать повторных запусков)
-    _completed_albums.add(media_group_id)
-    
-    # Очищаем state альбома
-    await state.update_data(album_photos=None, album_prompt=None, album_generation_started=None)
-    await state.set_state(GenState.waiting_for_input)
-
-    # Запускаем генерацию
-    await run_image_generation(message, session, prompt, reference_images, state)
-
-    logger.info(f"Album: генерация завершена")
-    
-    # Блокировка удалится автоматически при выходе из async with в handle_standard_input
-    # Удаляем из множества завершенных через некоторое время (очистка памяти)
-    asyncio.create_task(_cleanup_completed_album(media_group_id))
-
-
-async def _cleanup_completed_album(media_group_id: str):
+async def cleanup_completed_album(media_group_id: str):
     """Очищает множество завершенных альбомов через 1 минуту"""
     await asyncio.sleep(60)
     _completed_albums.discard(media_group_id)
 
-
 async def _process_single_message(
-    message: Message, 
-    state: FSMContext, 
+    message: Message,
+    state: FSMContext,
     session: AsyncSession
 ):
     """Обработка одиночного сообщения (не альбом)"""
     current_state = await state.get_state()
-    
     if current_state == GenState.generating:
         logger.info(f"_process_single_message: генерация уже идет, игнорируем")
         return
-    
+
     if current_state and current_state != GenState.waiting_for_input:
         logger.info(f"_process_single_message: в состоянии {current_state}, игнорируем")
         return
-    
+
     user_id = message.from_user.id
     result = await session.execute(select(User).where(User.telegram_id == user_id))
     user = result.scalar_one_or_none()
-    
     if not user:
         return
-    
+
     model_id = user.current_model
     if model_id not in ALL_MODELS:
         model_id = "openai/gpt-4o-mini"
-    
     model_info = ALL_MODELS[model_id]
     category = model_info.get("category", "gen_text")
+
     if "category" not in model_info:
         for cat, families in MODEL_CATALOG.items():
             for fam_data in families.values():
@@ -370,23 +247,23 @@ async def _process_single_message(
                     if m["id"] == model_id:
                         category = cat
                         break
-    
+
     # Проверка: текстовые модели должны принимать только текст
     if category in ["gen_text", "gen_search"]:
         if not message.text:
-            await message.answer("⚠️ <b>Текстовая модель ожидает текст!</b>\n\nПожалуйста, отправьте ваш запрос текстом.", parse_mode="HTML")
+            await message.answer("<b>Текстовая модель ожидает текст!</b>\nПожалуйста, отправьте ваш запрос текстом.", parse_mode="HTML")
             return
-    
+
     # Проверка: image-to-video модели требуют фото
     is_img_model = "image-to" in model_id or "img2vid" in model_info["name"].lower()
     if category == "gen_video" and is_img_model and not message.photo:
-        await message.answer("❌ Эта модель требует <b>фотографию</b>! Прикрепите изображение.", parse_mode="HTML")
+        await message.answer("Эта модель требует <b>фотографию</b>! Прикрепите изображение.", parse_mode="HTML")
         return
-    
-    # Для изображений — обрабатываем фото и/или текст
+
+    # Для изображений обрабатываем фото и/или текст
     if category in ["gen_image", "gen_nano_banana"]:
         await state.set_state(GenState.generating)
-        
+
         reference_images = []
         if message.photo:
             photo = message.photo[-1]
@@ -395,23 +272,22 @@ async def _process_single_message(
                 reference_images.append(ref_url)
         
         prompt = message.text or message.caption or ""
-        
+
         if not reference_images and not prompt:
             await state.set_state(GenState.waiting_for_input)
             await message.answer(
-                "⚠️ <b>Отправьте текст и/или фото!</b>\n\n"
+                "<b>Отправьте текст и/или фото!</b>\n\n"
                 "Для генерации изображения нужен хотя бы один из параметров:\n"
                 "• Текстовый промпт (описание)\n"
                 "• 1-3 фотографии как референсы",
                 parse_mode="HTML"
             )
             return
-        
+
         await run_image_generation(message, session, prompt, reference_images, state)
         return
-    
-    await run_simple_generation(message, user, session, model_info, category)
 
+    await run_simple_generation(message, user, session, model_info, category)
 
 async def run_complex_generation(
     message: Message,
@@ -421,10 +297,7 @@ async def run_complex_generation(
     second_image_file_id: str = None,
     prompt: str = None,
 ):
-    """
-    Сложная генерация видео (Motion Control, First-Last Frame).
-    Использует видео-пакеты вместо токенов.
-    """
+    """Сложная генерация видео (Motion Control, First-Last Frame)"""
     user_id = message.from_user.id
     result = await session.execute(select(User).where(User.telegram_id == user_id))
     user = result.scalar_one_or_none()
@@ -433,11 +306,11 @@ async def run_complex_generation(
     model_info = ALL_MODELS.get(model_id, {"cost": 0, "name": "Unknown"})
     cost = model_info.get("cost", 0)
 
-    # Проверяем баланс видео-генераций (1 генерация = 1 видео)
+    # Проверяем баланс видео-генераций
     if user.video_generations_balance < 1:
         await message.answer(
             "❌ <b>Недостаточно видео-генераций!</b>\n\n"
-            "Приобретите пакет видео-генераций в разделе 💎 Подписка.",
+            "Приобретите пакет видео-генераций в разделе Подписка.",
             parse_mode="HTML"
         )
         return
@@ -447,17 +320,17 @@ async def run_complex_generation(
     await session.commit()
 
     status_msg = await message.answer(
-        f"⏳ <b>{model_info['name']}</b>\nЗагружаю файлы и колдую...\n\n"
-        f"⏱️ Генерация может занять <b>7-10 минут</b>. Пожалуйста, подождите...",
+        f"🎬 <b>{model_info['name']}</b>\nЗагружаю файлы и колдую...\n\n"
+        "⏳ Генерация может занять <b>7-10 минут</b>. Пожалуйста, подождите...",
         parse_mode="HTML",
     )
-    api = APIClient()
 
+    api = APIClient()
     tmp_path = None
 
     try:
         logger.info(f"Complex Gen: model={model_id}, video={video_file_id}, prompt={prompt}")
-
+        
         first_url = await _get_file_url_or_base64(message.bot, first_file_id, is_video=False)
         if not first_url:
             raise Exception("Не удалось загрузить первое изображение")
@@ -498,20 +371,17 @@ async def run_complex_generation(
 
         logger.info(f"Complex Gen: Результат готов: {res_url}. Пытаемся отправить как VIDEO по URL...")
 
-        # --- НОВАЯ ЛОГИКА: Скачиваем всегда, если можем, чтобы отправить и видео, и файл ---
         logger.info("Complex Gen: Скачиваем видео локально для отправки...")
         tmp_path = await download_to_tempfile(res_url)
 
         sent_video_ok = False
 
-        # 1. Отправляем как ВИДЕО (красиво, для просмотра)
         if tmp_path and os.path.exists(tmp_path):
             try:
-                # Отправляем скачанный файл как видео
                 input_file_video = FSInputFile(tmp_path, filename="video.mp4")
                 await message.answer_video(
                     input_file_video,
-                    caption=f"🎬 <b>{model_info['name']}</b>\n🎬 -1 генерация",
+                    caption=f"🎬 <b>{model_info['name']}</b>\n💎 -1 генерация",
                     parse_mode="HTML",
                     reply_markup=back_to_menu_kb(),
                     supports_streaming=True
@@ -522,11 +392,10 @@ async def run_complex_generation(
                 logger.warning(f"Complex Gen: Ошибка отправки видео-файлом: {e}")
 
         if not sent_video_ok:
-            # Если скачать не удалось или не отправилось файлом - пробуем URL (старый метод)
             try:
                 await message.answer_video(
                     res_url,
-                    caption=f"🎬 <b>{model_info['name']}</b>\n🎬 -1 генерация",
+                    caption=f"🎬 <b>{model_info['name']}</b>\n💎 -1 генерация",
                     parse_mode="HTML",
                     reply_markup=back_to_menu_kb(),
                 )
@@ -535,32 +404,29 @@ async def run_complex_generation(
             except Exception as e:
                 logger.warning(f"Complex Gen: Ошибка отправки по URL: {e}")
 
-        # 2. Отправляем как ДОКУМЕНТ (для сохранения качества), если файл скачался
         if tmp_path and os.path.exists(tmp_path) and sent_video_ok:
             try:
                 input_file_doc = FSInputFile(tmp_path, filename="video_source.mp4")
                 await message.answer_document(
                     input_file_doc,
-                    caption="📂 <b>Исходный файл</b> (без сжатия)",
+                    caption="📄 <b>Исходный файл</b> (без сжатия)",
                     parse_mode="HTML"
                 )
                 logger.info("Complex Gen: Документ-исходник отправлен.")
             except Exception as e:
                 logger.warning(f"Complex Gen: Ошибка отправки документа: {e}")
 
-        # Если вообще ничего не отправилось
         if not sent_video_ok:
-             await message.answer(
-                f"✅ <b>Видео готово!</b>\n\n"
-                f"🎬 Модель: <b>{model_info['name']}</b>\n"
-                f"🎬 -1 генерация\n\n"
-                f"⚠️ Не удалось загрузить видео в Telegram, вот прямая ссылка:\n"
-                f"🔗 <a href='{res_url}'>Скачать видео</a>",
+            await message.answer(
+                "✅ <b>Видео готово!</b>\n\n"
+                f"🤖 Модель: <b>{model_info['name']}</b>\n"
+                "💎 -1 генерация\n\n"
+                "⚠️ Не удалось загрузить видео в Telegram, вот прямая ссылка:\n"
+                f"<a href='{res_url}'>Скачать видео</a>",
                 parse_mode="HTML",
                 reply_markup=back_to_menu_kb(),
             )
 
-        # Удаляем статусное сообщение
         try:
             await status_msg.delete()
         except:
@@ -573,28 +439,26 @@ async def run_complex_generation(
                 prompt=prompt,
                 result="OK",
                 status=GenerationStatus.COMPLETED,
-                cost=1,  # 1 видео-генерация
+                cost=1,
             )
         )
         await session.commit()
 
     except Exception as e:
         logger.error(f"Complex Gen Error: {e}")
-        # Возвращаем видео-генерацию при ошибке
         user.video_generations_balance += 1
         await session.commit()
         try:
             await status_msg.edit_text(f"❌ Ошибка: {str(e)}")
         except:
             await message.answer(f"❌ Ошибка: {str(e)}")
+
     finally:
-        # Удаляем временный файл
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
             except:
                 pass
-
 
 async def run_image_generation(
     message: Message,
@@ -603,16 +467,7 @@ async def run_image_generation(
     reference_images: list = None,
     state: FSMContext = None,
 ):
-    """
-    Генерация изображения с поддержкой референсов.
-
-    Args:
-        message: Сообщение с промптом
-        session: DB сессия
-        prompt: Текстовый промпт
-        reference_images: Список URL/base64 референсов (до 3)
-        state: FSM state для сброса после генерации
-    """
+    """Генерация изображения с поддержкой референсов."""
     if reference_images is None:
         reference_images = []
 
@@ -634,14 +489,13 @@ async def run_image_generation(
     await session.commit()
 
     status_msg = await message.answer(
-        f"⏳ <b>{model_info['name']}</b>\nГенерирую изображение...",
+        f"🎨 <b>{model_info['name']}</b>\nГенерирую изображение...",
         parse_mode="HTML"
     )
 
     api = APIClient()
 
     try:
-        # Вызываем генератор с референсами
         res = await api.generate_image(model_info["id"], prompt, reference_images=reference_images)
 
         if not res:
@@ -649,47 +503,43 @@ async def run_image_generation(
 
         await status_msg.delete()
 
-        # Проверяем тип результата: URL (строка) или BufferedInputFile (файл)
         from aiogram.types import BufferedInputFile
 
         try:
             if isinstance(res, BufferedInputFile):
-                # Изображение в base64 — отправляем как файл
                 logger.info("Sending image as BufferedInputFile (base64)")
                 await message.answer_photo(
                     res,
-                    caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
+                    caption=f"🎨 <b>{model_info['name']}</b>\n💎 -{cost}",
                     parse_mode="HTML",
                     reply_markup=back_to_menu_kb(),
                 )
             else:
-                # Изображение по URL
                 image_url = normalize_url(str(res))
                 logger.info(f"Image URL: {image_url}")
                 await message.answer_photo(
                     image_url,
-                    caption=f"🎨 <b>{model_info['name']}</b>\n🍌 -{cost}",
+                    caption=f"🎨 <b>{model_info['name']}</b>\n💎 -{cost}",
                     parse_mode="HTML",
                     reply_markup=back_to_menu_kb(),
                 )
         except Exception as send_error:
-            # Если отправка не удалась — пробуем показать ссылку
             logger.error(f"Failed to send image: {send_error}")
             if not isinstance(res, BufferedInputFile):
                 image_url = normalize_url(str(res))
                 await message.answer(
                     f"🎨 <b>{model_info['name']}</b>\n"
-                    f"🍌 -{cost}\n\n"
-                    f"⚠️ Не удалось отправить изображение в Telegram.\n"
-                    f"🔗 <a href='{image_url}'>Скачать изображение</a>",
+                    f"💎 -{cost}\n\n"
+                    "⚠️ Не удалось отправить изображение в Telegram.\n"
+                    f"<a href='{image_url}'>Скачать изображение</a>",
                     parse_mode="HTML",
                     reply_markup=back_to_menu_kb(),
                 )
             else:
                 await message.answer(
                     f"🎨 <b>{model_info['name']}</b>\n"
-                    f"🍌 -{cost}\n\n"
-                    f"⚠️ Ошибка отправки: {send_error}",
+                    f"💎 -{cost}\n\n"
+                    f"❌ Ошибка отправки: {send_error}",
                     parse_mode="HTML",
                     reply_markup=back_to_menu_kb(),
                 )
@@ -714,71 +564,61 @@ async def run_image_generation(
             await status_msg.edit_text(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
         except:
             await message.answer(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
+
     finally:
-        # Очищаем state от временных данных альбома (если использовался)
         if state:
             await state.update_data(album_photos=None, album_prompt=None)
             await state.set_state(GenState.waiting_for_input)
-
 
 async def run_simple_generation(message: Message, user: User, session: AsyncSession, model_info: dict, category: str):
     cost = model_info.get("cost", 1)
     prompt = message.caption or message.text or ""
 
-    # Для видео используем отдельный баланс видео-генераций
     if category == "gen_video":
         if user.video_generations_balance < 1:
             await message.answer(
                 "❌ <b>Недостаточно видео-генераций!</b>\n\n"
-                "Приобретите пакет видео-генераций в разделе 💎 Подписка.",
+                "Приобретите пакет видео-генераций в разделе Подписка.",
                 parse_mode="HTML"
             )
             return
-        
-        # Списываем 1 видео-генерацию
         user.video_generations_balance -= 1
     else:
-        # Для остальных категорий (текст, изображения, поиск) используем токены
         if user.tokens_balance < cost:
             await message.answer(f"❌ Недостаточно токенов! Нужно {cost}.", parse_mode="HTML")
             return
-        
-        # Списываем токены
         user.tokens_balance -= cost
-    
+
     await session.commit()
 
-    status_msg = await message.answer(f"⏳ <b>{model_info['name']}</b>\nДумаю...", parse_mode="HTML")
+    status_msg = await message.answer(f"🧠 <b>{model_info['name']}</b>\nдумаю...", parse_mode="HTML")
+
     api = APIClient()
 
     try:
         image_url = None
         if message.photo:
             image_url = await _get_file_url_or_base64(message.bot, message.photo[-1].file_id)
-            if not prompt:
-                prompt = "Creative video"
+
+        if not prompt:
+            prompt = "Creative video"
 
         if category == "gen_video":
             res = await api.generate_video(model_info["id"], prompt, image_url=image_url)
             if not res:
                 raise Exception("Ошибка видео")
-
+            
             await status_msg.delete()
             await message.answer_video(
                 normalize_url(res),
-                caption=f"🎬 <b>{model_info['name']}</b>\n🎬 -1 генерация",
+                caption=f"🎬 <b>{model_info['name']}</b>\n💎 -1 генерация",
                 parse_mode="HTML",
                 reply_markup=back_to_menu_kb(),
             )
-
         elif category == "gen_image":
-            # Используем новую функцию с поддержкой референсов
-            # Для обратной совместимости, если нет референсов - передаем пустой список
             await run_image_generation(message, session, prompt, reference_images=[])
-            return  # run_image_generation уже сохраняет Generation и делает коммит
-
+            return
         elif category in ["gen_text", "gen_search"]:
-            # Для текстовых моделей используем историю сообщений
             messages = [{"role": "user", "content": prompt}]
             res = await api.generate_text(
                 model_info["id"],
@@ -786,10 +626,10 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
                 session=session,
                 user_id=user.id
             )
+            
             await status_msg.delete()
 
             if res and not res.startswith("Error:"):
-                # Успешная генерация — сохраняем историю (коммит будет ниже)
                 session.add(
                     Generation(
                         user_id=user.id,
@@ -802,14 +642,12 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
                 )
                 await message.answer(res[:4000], parse_mode="Markdown", reply_markup=back_to_menu_kb())
             else:
-                # Ошибка генерации — откатываем токен и выходим
                 user.tokens_balance += cost
                 await session.commit()
-                error_msg = res if res else "❌ Ошибка: не удалось получить ответ от модели"
+                error_msg = res if res else "Ошибка: не удалось получить ответ от модели"
                 await message.answer(f"❌ {error_msg}", reply_markup=back_to_menu_kb())
-                return  # Выходим, чтобы не дублировать коммит и сохранение Generation ниже
+                return
 
-        # Для всех категорий (кроме ошибки текстовой модели) сохраняем генерацию
         session.add(
             Generation(
                 user_id=user.id,
@@ -824,22 +662,19 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
 
     except Exception as e:
         logger.error(f"Simple Gen Error: {e}")
-        # Возвращаем ресурсы при ошибке
         if category == "gen_video":
             user.video_generations_balance += 1
         else:
             user.tokens_balance += cost
         await session.commit()
-        # Пробуем редактировать статусное сообщение, но если не выйдет — шлём новое
+        
         try:
             await status_msg.edit_text(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
         except:
             await message.answer(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
 
-
 async def _get_file_url_or_base64(bot, file_id, is_video=False):
     logger.info(f"_get_file_url_or_base64: file_id={file_id}, is_video={is_video}")
-
     file = await bot.get_file(file_id)
 
     if is_video:
@@ -851,11 +686,11 @@ async def _get_file_url_or_base64(bot, file_id, is_video=False):
     file_bytes_io = await bot.download_file(file.file_path)
     file_bytes = file_bytes_io.read()
     mime = "image/jpeg"
-    file_size_mb = len(file_bytes) / (1024 * 1024)
 
-    logger.info(f"Photo download: {file_size_mb:.2f}MB")
+    file_size_mb = len(file_bytes) / (1024*1024)
+    logger.info(f"Photo download: {file_size_mb:.2f} MB")
 
-    try_upload = len(file_bytes) > 2 * 1024 * 1024
+    try_upload = len(file_bytes) > 2*1024*1024
     if try_upload:
         filename = f"{file_id}.jpg"
         url = await upload_file_to_fal(file_bytes, filename, mime)
@@ -865,22 +700,15 @@ async def _get_file_url_or_base64(bot, file_id, is_video=False):
     base64_str = base64.b64encode(file_bytes).decode("utf-8")
     return f"data:{mime};base64,{base64_str}"
 
-
 async def download_to_tempfile(url: str) -> Optional[str]:
-    """
-    Скачивает файл по URL в tmp (MAX STABILITY VERSION).
-    """
     url = normalize_url(url)
     if not url:
         return None
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-
-    # sock_read=None отключает таймаут на чтение пакетов, total=3600 дает час
     timeout = aiohttp.ClientTimeout(total=3600, sock_connect=60, sock_read=None)
-
     fd, path = tempfile.mkstemp(suffix=".mp4", prefix="nexusai_")
     os.close(fd)
 
@@ -894,19 +722,18 @@ async def download_to_tempfile(url: str) -> Optional[str]:
 
                 with open(path, "wb") as f:
                     while True:
-                        chunk = await resp.content.read(128 * 1024) # 128 KB chunks
+                        chunk = await resp.content.read(128 * 1024)
                         if not chunk:
                             break
                         f.write(chunk)
 
-        if os.path.exists(path) and os.path.getsize(path) > 0:
-            size_mb = os.path.getsize(path) / (1024 * 1024)
-            logger.info(f"Video downloaded to tmp: {path}, size={size_mb:.2f} MB")
-            return path
-        else:
-            logger.error("Download finished but file is empty or missing")
-            return None
-
+                if os.path.exists(path) and os.path.getsize(path) > 0:
+                    size_mb = os.path.getsize(path) / (1024*1024)
+                    logger.info(f"Video downloaded to tmp: {path}, size={size_mb:.2f} MB")
+                    return path
+                else:
+                    logger.error("Download finished but file is empty or missing")
+                    return None
     except asyncio.TimeoutError:
         logger.error(f"Download timeout (MAX STABILITY) for: {url}")
         return None
