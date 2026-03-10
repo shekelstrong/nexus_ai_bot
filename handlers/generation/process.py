@@ -175,104 +175,101 @@ async def handle_standard_input(message: Message, state: FSMContext, session: As
 
 
 async def _process_album_message(
-    message: Message, 
-    state: FSMContext, 
+    message: Message,
+    state: FSMContext,
     session: AsyncSession,
     media_group_id: str
 ):
-    """Обработка сообщения из альбома с блокировкой"""
+    """
+    Обработка сообщения из альбома с блокировкой.
+    Собирает все фото из альбома (максимум 3) и запускает генерацию ОДИН раз.
+    """
     try:
         logger.info(f"_process_album_message: НАЧАЛО, media_group_id={media_group_id}")
-        
+
         current_state = await state.get_state()
         logger.info(f"_process_album_message: current_state={current_state}")
-        
+
         # Проверяем состояние
         if current_state and current_state not in [GenState.waiting_for_input, GenState.generating]:
             logger.info(f"_process_album_message: игнорируем, состояние {current_state}")
             return
-        
+
         user_id = message.from_user.id
         result = await session.execute(select(User).where(User.telegram_id == user_id))
         user = result.scalar_one_or_none()
         logger.info(f"_process_album_message: user={user is not None}")
-        
+
         if not user:
             logger.warning(f"_process_album_message: пользователь не найден")
             return
-        
+
         model_id = user.current_model
         logger.info(f"_process_album_message: model_id={model_id}")
-        
+
         if model_id not in ALL_MODELS:
             model_id = "openai/gpt-4o-mini"
-        
+
         model_info = ALL_MODELS[model_id]
         category = model_info.get("category", "gen_text")
-        
+
         logger.info(f"_process_album_message: category={category}")
-        
+
         # Только для изображений
         if category not in ["gen_image", "gen_nano_banana"]:
             logger.info(f"_process_album_message: не изображение (category={category}), игнорируем")
             return
-        
+
         # Получаем данные альбома
         data = await state.get_data()
         album_photos = data.get("album_photos") or []
         album_prompt = data.get("album_prompt") or ""
-        
-        logger.info(f"Album [LOCKED]: получено фото, до этого было собрано: {len(album_photos)}")
-        
+
+        logger.info(f"Album: получено фото, до этого было собрано: {len(album_photos)}")
+
         # Добавляем текущее фото
         photo = message.photo[-1]
         ref_url = await _get_file_url_or_base64(message.bot, photo.file_id)
         if ref_url:
             album_photos.append(ref_url)
-            logger.info(f"Album [LOCKED]: добавлено фото, всего: {len(album_photos)}")
-        
+            logger.info(f"Album: добавлено фото, всего: {len(album_photos)}")
+
         # Сохраняем caption (промпт) — берем из первого сообщения с текстом
         if message.caption and not album_prompt:
             album_prompt = message.caption
-            logger.info(f"Album [LOCKED]: промпт из caption: {album_prompt[:50]}...")
-        
+            logger.info(f"Album: промпт из caption: {album_prompt[:50]}...")
+
         # Сохраняем данные в state
         await state.update_data(album_photos=album_photos, album_prompt=album_prompt)
         await state.set_state(GenState.generating)
-        
-        logger.info(f"Album [LOCKED]: сохранено в state, собрано {len(album_photos)} фото из альбома")
-        
-        # Ждем остальные фото
+
+        logger.info(f"Album: сохранено в state, собрано {len(album_photos)} фото из альбома")
+
+        # Проверяем, собрали ли все фото (максимум 3) или это последнее сообщение в альбоме
+        # Если уже собрали 3 фото или больше — запускаем генерацию
+        if len(album_photos) >= 3:
+            logger.info(f"Album: собрано максимум фото (3), запускаем генерацию")
+            await _run_album_generation(message, session, album_photos, album_prompt, state)
+            return
+
+        # Ждем остальные фото (но не больше 3 всего)
         wait_count = 0
-        max_wait_cycles = 10  # 10 * 0.3сек = 3 сек
-        while len(album_photos) < 4 and wait_count < max_wait_cycles:  # Максимум 3 фото + 1 проверка
-            # Ждем немного
+        max_wait_cycles = 15  # 15 * 0.3сек = 4.5 сек
+        while len(album_photos) < 3 and wait_count < max_wait_cycles:
             await asyncio.sleep(0.3)
             wait_count += 1
-            
+
             # Перечитываем данные
             data = await state.get_data()
             album_photos = data.get("album_photos") or []
-            logger.info(f"Album [LOCKED]: после ожидания {wait_count * 0.3:.1f}сек собрано {len(album_photos)} фото")
-        
+            logger.info(f"Album: после ожидания {wait_count * 0.3:.1f}сек собрано {len(album_photos)} фото")
+
         if wait_count >= max_wait_cycles:
-            logger.info(f"Album [LOCKED]: таймаут ожидания ({ALBUM_WAIT_TIMEOUT}сек)")
-        
-        # Запускаем генерацию с собранными референсами
-        reference_images = album_photos[:3]
-        prompt = album_prompt or ""
-        
-        logger.info(f"Album [LOCKED]: запускаем генерацию с {len(reference_images)} референсами, prompt='{prompt[:30] if prompt else 'None'}...'")
-        
-        # Очищаем state альбома
-        await state.update_data(album_photos=None, album_prompt=None)
-        await state.set_state(GenState.waiting_for_input)
-        
-        # Запускаем генерацию
-        await run_image_generation(message, session, prompt, reference_images, state)
-        
-        logger.info(f"Album [LOCKED]: генерация завершена")
-        
+            logger.info(f"Album: таймаут ожидания ({ALBUM_WAIT_TIMEOUT}сек)")
+
+        # Запускаем генерацию с собранными референсами (даже если их меньше 3)
+        await _run_album_generation(message, session, album_photos, album_prompt, state)
+
     except Exception as e:
         logger.exception(f"_process_album_message: ИСКЛЮЧЕНИЕ: {e}")
         raise
@@ -280,7 +277,43 @@ async def _process_album_message(
         # Удаляем блокировку
         if media_group_id in _album_locks:
             del _album_locks[media_group_id]
-            logger.info(f"Album [LOCKED]: блокировка удалена для {media_group_id}")
+            logger.info(f"Album: блокировка удалена для {media_group_id}")
+
+
+async def _run_album_generation(
+    message: Message,
+    session: AsyncSession,
+    album_photos: list,
+    album_prompt: str,
+    state: FSMContext
+):
+    """
+    Запускает генерацию изображения по альбому.
+    Вызывается только ОДИН раз после сбора всех фото.
+    """
+    # Проверяем флаг, чтобы не запустить генерацию дважды
+    data = await state.get_data()
+    if data.get("album_generation_started"):
+        logger.info("Album: генерация уже запущена, пропускаем")
+        return
+
+    # Ставим флаг, что генерация началась
+    await state.update_data(album_generation_started=True)
+
+    # Берем максимум 3 референса
+    reference_images = album_photos[:3]
+    prompt = album_prompt or ""
+
+    logger.info(f"Album: запускаем генерацию с {len(reference_images)} референсами, prompt='{prompt[:30] if prompt else 'None'}...'")
+
+    # Очищаем state альбома
+    await state.update_data(album_photos=None, album_prompt=None, album_generation_started=None)
+    await state.set_state(GenState.waiting_for_input)
+
+    # Запускаем генерацию
+    await run_image_generation(message, session, prompt, reference_images, state)
+
+    logger.info(f"Album: генерация завершена")
 
 
 async def _process_single_message(
