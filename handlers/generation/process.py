@@ -197,10 +197,21 @@ async def _process_album_task(message: Message, state: FSMContext, session: Asyn
         reference_images = album_photos[:3]
         prompt = album_prompt or ""
 
-        logger.info(f"Album: запускаем генерацию с {len(reference_images)} референсами, prompt='{prompt[:30]}'")
+        # === ДОБАВЛЯЕМ СТИЛЬ И РАЗМЕР ИЗ FSM ===
+        data = await state.get_data()
+        size_prompt = data.get("size_prompt", "")
+        style_prompt = data.get("style_prompt", "")
+        
+        final_prompt = prompt
+        if style_prompt:
+            final_prompt += style_prompt
+        if size_prompt:
+            final_prompt += size_prompt
+
+        logger.info(f"Album: запускаем генерацию с {len(reference_images)} референсами, prompt='{final_prompt[:30]}'")
 
         await state.set_state(GenState.waiting_for_input)
-        await run_image_generation(message, session, prompt, reference_images, state)
+        await run_image_generation(message, session, final_prompt, reference_images, state)
 
     except Exception as e:
         logger.exception(f"Album task error: {e}")
@@ -284,7 +295,18 @@ async def _process_single_message(
             )
             return
 
-        await run_image_generation(message, session, prompt, reference_images, state)
+        # === ДОБАВЛЯЕМ СТИЛЬ И РАЗМЕР ИЗ FSM ===
+        data = await state.get_data()
+        size_prompt = data.get("size_prompt", "")
+        style_prompt = data.get("style_prompt", "")
+        
+        final_prompt = prompt
+        if style_prompt:
+            final_prompt += style_prompt
+        if size_prompt:
+            final_prompt += size_prompt
+
+        await run_image_generation(message, session, final_prompt, reference_images, state)
         return
 
     await run_simple_generation(message, user, session, model_info, category)
@@ -567,6 +589,7 @@ async def run_image_generation(
 
     finally:
         if state:
+            # Очищаем только временные данные альбома, размер и стиль оставляем для следующих генераций
             await state.update_data(album_photos=None, album_prompt=None)
             await state.set_state(GenState.waiting_for_input)
 
