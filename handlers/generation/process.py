@@ -29,6 +29,9 @@ router = Router(name="process_router")
 # Ключ: media_group_id, Значение: asyncio.Lock
 _album_locks: Dict[str, asyncio.Lock] = {}
 
+# Множество для отслеживания завершенных альбомов (чтобы не запустить генерацию дважды)
+_completed_albums: set = set()
+
 # Максимальное время ожидания сбора всех фото из альбома (сек)
 ALBUM_WAIT_TIMEOUT = 3.0
 
@@ -187,6 +190,11 @@ async def _process_album_message(
     try:
         logger.info(f"_process_album_message: НАЧАЛО, media_group_id={media_group_id}")
 
+        # Проверяем, не была ли уже завершена генерация для этого альбома
+        if media_group_id in _completed_albums:
+            logger.info(f"Album: альбом {media_group_id} уже обработан, игнорируем")
+            return
+
         current_state = await state.get_state()
         logger.info(f"_process_album_message: current_state={current_state}")
 
@@ -249,7 +257,7 @@ async def _process_album_message(
         # Если уже собрали 3 фото или больше — запускаем генерацию
         if len(album_photos) >= 3:
             logger.info(f"Album: собрано максимум фото (3), запускаем генерацию")
-            await _run_album_generation(message, session, album_photos, album_prompt, state)
+            await _run_album_generation(message, session, album_photos, album_prompt, state, media_group_id)
             return
 
         # Ждем остальные фото (но не больше 3 всего)
@@ -268,7 +276,7 @@ async def _process_album_message(
             logger.info(f"Album: таймаут ожидания ({ALBUM_WAIT_TIMEOUT}сек)")
 
         # Запускаем генерацию с собранными референсами (даже если их меньше 3)
-        await _run_album_generation(message, session, album_photos, album_prompt, state)
+        await _run_album_generation(message, session, album_photos, album_prompt, state, media_group_id)
 
     except Exception as e:
         logger.exception(f"_process_album_message: ИСКЛЮЧЕНИЕ: {e}")
@@ -285,12 +293,15 @@ async def _run_album_generation(
     session: AsyncSession,
     album_photos: list,
     album_prompt: str,
-    state: FSMContext
+    state: FSMContext,
+    media_group_id: str
 ):
     """
     Запускает генерацию изображения по альбому.
     Вызывается только ОДИН раз после сбора всех фото.
     """
+    global _completed_albums
+    
     # Проверяем флаг, чтобы не запустить генерацию дважды
     data = await state.get_data()
     if data.get("album_generation_started"):
@@ -306,6 +317,9 @@ async def _run_album_generation(
 
     logger.info(f"Album: запускаем генерацию с {len(reference_images)} референсами, prompt='{prompt[:30] if prompt else 'None'}...'")
 
+    # Помечаем альбом как завершенный (до генерации, чтобы избежать повторных запусков)
+    _completed_albums.add(media_group_id)
+    
     # Очищаем state альбома
     await state.update_data(album_photos=None, album_prompt=None, album_generation_started=None)
     await state.set_state(GenState.waiting_for_input)
@@ -314,6 +328,16 @@ async def _run_album_generation(
     await run_image_generation(message, session, prompt, reference_images, state)
 
     logger.info(f"Album: генерация завершена")
+    
+    # Удаляем из множества завершенных через некоторое время (очистка памяти)
+    # Это нужно, чтобы media_group_id могли переиспользоваться (хотя они уникальны)
+    asyncio.create_task(_cleanup_completed_album(media_group_id))
+
+
+async def _cleanup_completed_album(media_group_id: str):
+    """Очищает множество завершенных альбомов через 1 минуту"""
+    await asyncio.sleep(60)
+    _completed_albums.discard(media_group_id)
 
 
 async def _process_single_message(

@@ -82,10 +82,15 @@ async def cmd_profile(message: Message, session: AsyncSession):
 
 @router.callback_query(F.data == "profile")
 async def profile_cb(cb: CallbackQuery, session: AsyncSession):
+    from aiogram.exceptions import TelegramBadRequest
+    
     res = await session.execute(select(User).where(User.telegram_id == cb.from_user.id))
     user = res.scalar_one_or_none()
     if not user:
-        await cb.message.edit_text("Сначала нажмите /start", reply_markup=main_menu())
+        try:
+            await cb.message.edit_text("Сначала нажмите /start", reply_markup=main_menu())
+        except TelegramBadRequest:
+            pass  # Игнорируем, если контент не изменился
         await cb.answer()
         return
 
@@ -122,7 +127,15 @@ async def profile_cb(cb: CallbackQuery, session: AsyncSession):
         f"🔗 <b>Ваш рефкод:</b> <code>{user.referral_code}</code>\n\n"
         f"Нажмите «История», чтобы посмотреть генерации."
     )
-    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=main_menu())
+    
+    try:
+        await cb.message.edit_text(text, parse_mode="HTML", reply_markup=main_menu())
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            # Игнорируем ошибку, если контент не изменился
+            pass
+        else:
+            raise
     await cb.answer()
 
 
