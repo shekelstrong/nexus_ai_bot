@@ -135,7 +135,8 @@ class WebhookServer:
         from database.models import TransactionType, TransactionStatus, SubscriptionTier
 
         async with async_session_maker() as session:
-            # Парсим order_id: format "tokens_25_12345" или "tier_BASIC_12345"
+            # Парсим order_id: format "tokens_25_12345" или "tier_BASIC_12345" или "tokens_tokens_25_12345"
+            # Важно: packet_id может содержать подчеркивания (например, "tokens_25"), поэтому берем все части кроме первой и последней
             parts = str(order_id).split("_")
 
             if len(parts) < 3:
@@ -143,8 +144,19 @@ class WebhookServer:
                 return
 
             item_type = parts[0]
-            item_id = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
+            # user_telegram_id - всегда последний элемент
             user_telegram_id = int(parts[-1])
+            # item_id - все части между первой и последней, соединенные подчеркиванием
+            # Например: "tokens_tokens_25_12345" -> item_type="tokens", item_id="tokens_25"
+            # Или: "tier_BASIC_12345" -> item_type="tier", item_id="BASIC"
+            if len(parts) == 3:
+                # Простой случай: "tier_BASIC_12345"
+                item_id = parts[1]
+            else:
+                # Сложный случай: "tokens_tokens_25_12345" -> "tokens_25"
+                item_id = "_".join(parts[1:-1])
+            
+            logger.info(f"Payment: order_id={order_id}, item_type={item_type}, item_id={item_id}, user={user_telegram_id}")
 
             # Находим пользователя
             res = await session.execute(select(User).where(User.telegram_id == user_telegram_id))
@@ -332,8 +344,11 @@ class WebhookServer:
     
     async def stop(self, runner):
         """Остановка сервера"""
-        await runner.cleanup()
-        logger.info("Webhook server stopped")
+        if runner:
+            await runner.cleanup()
+            logger.info("Webhook server stopped")
+        else:
+            logger.info("Webhook server: runner is None, skipping cleanup")
 
 
 # Глобальный экземпляр
