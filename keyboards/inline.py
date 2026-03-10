@@ -75,7 +75,7 @@ def model_families_menu(category: str):
         "flux": "Flux",
         "riverflow": "Riverflow",
         "seedream": "Seedream",
-        "gemini_image": "Gemini Image",
+        "gemini_image": "GPT Images",
         # Видео
         "kling": "Kling AI",
         "veo": "Google Veo",

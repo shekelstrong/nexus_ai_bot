@@ -1,5 +1,6 @@
+import os
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,6 +62,51 @@ STYLE_PROMPTS = {
 }
 STYLES_LIST = list(STYLE_PROMPTS.keys())
 
+# --- СЛОВАРИ ДЛЯ КАРТИНОК ---
+# Папка assets должна быть создана в корне проекта!
+CATEGORY_IMAGES = {
+    "gen_nano_banana": "assets/nano_banana.jpg"
+}
+
+FAMILY_IMAGES = {
+    "seedream": "assets/seedream.jpg",
+    "gemini_image": "assets/gpt_images.jpg"  # Картинка GPT Images привязана к системному ключу
+}
+
+async def _send_menu(callback: CallbackQuery, text: str, kb: InlineKeyboardMarkup, img_path: str = None):
+    """Умный хелпер для переключения между текстовыми меню и меню с картинками"""
+    if img_path and os.path.exists(img_path):
+        # Если нужна картинка (и она есть на диске) - удаляем старое сообщение и шлем фото
+        try:
+            await callback.message.delete()
+        except:
+            pass
+        await callback.message.answer_photo(
+            FSInputFile(img_path),
+            caption=text,
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+    else:
+        # Если картинка не нужна
+        if callback.message.photo or callback.message.video or callback.message.document:
+            # Если текущее сообщение - медиа, его нельзя просто отредактировать в текст. Удаляем и шлем заново.
+            try:
+                await callback.message.delete()
+            except:
+                pass
+            await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+        else:
+            # Если текущее сообщение текстовое - просто редактируем его (так красивее и без миганий)
+            try:
+                await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                try:
+                    await callback.message.delete()
+                except:
+                    pass
+                await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+
 @router.callback_query(F.data.startswith("cat:"))
 async def select_category_callback(callback: CallbackQuery):
     try:
@@ -73,59 +119,50 @@ async def select_category_callback(callback: CallbackQuery):
             "gen_search": "<b>Поисковые модели</b>"
         }
         title = titles.get(category, "Выберите категорию")
+        img_path = CATEGORY_IMAGES.get(category)
         
         if category == "gen_nano_banana":
-            await callback.message.edit_text(
+            await _send_menu(
+                callback,
                 f"{title}\nВыберите модель:",
-                reply_markup=nano_banana_menu(),
-                parse_mode="HTML"
+                nano_banana_menu(),
+                img_path
             )
         else:
-            await callback.message.edit_text(
+            await _send_menu(
+                callback,
                 f"{title}\nВыберите семейство моделей:",
-                reply_markup=model_families_menu(category),
-                parse_mode="HTML"
+                model_families_menu(category),
+                img_path
             )
     except Exception as e:
+        logger.error(f"Error in category selection: {e}")
         await callback.message.answer("Меню устарело. Вызовите /start")
     await callback.answer()
 
 @router.callback_query(F.data.startswith("family:"))
 async def select_family_callback(callback: CallbackQuery):
     category, family = callback.data.split(":")[1:]
-    await callback.message.edit_text(
+    img_path = FAMILY_IMAGES.get(family)
+    
+    await _send_menu(
+        callback,
         "<b>Выберите конкретную модель:</b>",
-        reply_markup=models_list_menu(category, family),
-        parse_mode="HTML"
+        models_list_menu(category, family),
+        img_path
     )
     await callback.answer()
 
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu_handler(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    if callback.message.text:
-        try:
-            await callback.message.edit_text(
-                "<b>Главное меню:</b>\nВыберите действие:",
-                reply_markup=main_menu(),
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            logger.warning(f"Failed to edit message: {e}")
-            await _send_menu_as_new_message(callback)
-    else:
-        await _send_menu_as_new_message(callback)
+    await _send_menu(
+        callback,
+        "<b>Главное меню:</b>\nВыберите действие:",
+        main_menu(),
+        img_path=None
+    )
     await callback.answer()
-
-async def _send_menu_as_new_message(callback: CallbackQuery):
-    try:
-        await callback.message.answer(
-            "<b>Главное меню:</b>\nВыберите действие:",
-            reply_markup=main_menu(),
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        logger.error(f"Failed to send menu: {e}")
 
 @router.callback_query(F.data.startswith("set_model:"))
 async def set_model_handler(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
@@ -143,7 +180,13 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
     
     await state.clear()
     
-    # === НОВАЯ ЛОГИКА: ПРЕДЛАГАЕМ РАЗМЕРЫ ДЛЯ ИЗОБРАЖЕНИЙ ===
+    # Независимо от того, было ли меню с фото или текстом, 
+    # мы его удаляем и присылаем чистое текстовое сообщение для ввода промпта/настроек.
+    try:
+        await callback.message.delete()
+    except:
+        pass
+    
     if category in ["gen_image", "gen_nano_banana"]:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="1:1", callback_data="size_1:1"), InlineKeyboardButton(text="16:9", callback_data="size_16:9")],
@@ -153,12 +196,10 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
         ])
         text = f"✅ <b>Модель установлена!</b>\nВыбрана: <b>{name}</b>\n\nТеперь выберите соотношение сторон (размер):"
-        await callback.message.delete()
         await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
         await callback.answer()
         return
 
-    # === ЛОГИКА ДЛЯ ОСТАЛЬНЫХ МОДЕЛЕЙ (БЕЗ РАЗМЕРОВ) ===
     text = f"✅ <b>Модель установлена!</b>\nВыбрана: <b>{name}</b>\n\n"
     
     if category == "gen_text":
@@ -187,7 +228,6 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
         text += "Теперь просто напишите ваш <b>запрос (промпт)</b>."
         await state.set_state(GenState.waiting_for_input)
         
-    await callback.message.delete()
     await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
     await callback.answer()
 
@@ -224,10 +264,7 @@ async def set_style(cb: CallbackQuery, state: FSMContext):
         style_prompt = STYLE_PROMPTS.get(style, "")
         style_name = style
         
-    # Сохраняем стиль в FSM Context
     await state.update_data(style=style_name, style_prompt=style_prompt)
-    
-    # Теперь ставим состояние для принятия промпта
     await state.set_state(GenState.waiting_for_input)
     
     text = (
