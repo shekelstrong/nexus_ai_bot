@@ -3,18 +3,32 @@ from model_config import MODEL_CATALOG
 from config import SUBSCRIPTION_TIERS, TOKEN_PACKAGES
 
 def main_menu() -> InlineKeyboardMarkup:
-    """Главное меню бота."""
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💎 Подписка", callback_data="open_subscription")],
-        [InlineKeyboardButton(text="🍌 Nano Banana", callback_data="cat:gen_nano_banana")],
-        [InlineKeyboardButton(text="🤖 Текстовые нейросети", callback_data="cat:gen_text")],
-        [InlineKeyboardButton(text="🎨 Изображения", callback_data="cat:gen_image")],
-        [InlineKeyboardButton(text="🎬 Видео-генерация", callback_data="cat:gen_video")],
-        [InlineKeyboardButton(text="👤 Мой профиль", callback_data="my_profile")],
-        [InlineKeyboardButton(text="🌐 Поиск в интернете", callback_data="cat:gen_search")],
-        [InlineKeyboardButton(text="👨‍💻 Поддержка / FAQ", url="https://t.me/nedopekin")],
+    """Главное меню бота (ОРИГИНАЛЬНОЕ)."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🍌 Nano Banana", callback_data="cat:gen_nano_banana"),
+            InlineKeyboardButton(text="🤖 Текст", callback_data="cat:gen_text")
+        ],
+        [
+            InlineKeyboardButton(text="🌐 Perplexity", callback_data="cat:gen_search"),
+            InlineKeyboardButton(text="🎨 Изображения", callback_data="cat:gen_image")
+        ],
+        [
+            InlineKeyboardButton(text="🎬 Видео", callback_data="cat:gen_video")
+        ],
+        [
+            InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
+            InlineKeyboardButton(text="💎 Подписка", callback_data="subscriptions")
+        ],
+        [
+            InlineKeyboardButton(text="📊 История", callback_data="history"),
+            InlineKeyboardButton(text="🎁 Рефералка", callback_data="referrals")
+        ],
+        [
+            InlineKeyboardButton(text="👨‍💻 Поддержка", callback_data="support")
+        ]
     ])
-    return keyboard
+    return kb
 
 def back_to_menu_kb() -> InlineKeyboardMarkup:
     """Кнопка возврата в главное меню."""
@@ -35,7 +49,7 @@ def cancel_generation_menu() -> InlineKeyboardMarkup:
     ])
 
 def model_families_menu(category: str) -> InlineKeyboardMarkup:
-    """Меню выбора семейства моделей в определенной категории."""
+    """Меню выбора семейства моделей в определенной категории (компактно по 2)."""
     families = MODEL_CATALOG.get(category, {})
     
     family_titles = {
@@ -48,74 +62,87 @@ def model_families_menu(category: str) -> InlineKeyboardMarkup:
         "deepseek": "DeepSeek",
         "qwen": "Qwen",
         "nvidia": "NVIDIA",
-        "other": "Другие текстовые",
+        "other": "Другие",
         "free": "Бесплатные",
         "seedream": "Seedream",
         "gemini_image": "GPT Images",
-        "fal_ai_image": "FAL AI (Midjourney & Flux)",
-        "other_image": "Другие графические",
+        "fal_ai_image": "Midjourney & Flux",
+        "other_image": "Другие",
         "kling": "Kling AI",
-        "veo": "Veo",
-        "wan": "Wan",
+        "veo": "Google Veo",
+        "wan": "Wan Video",
         "fal_ai_video": "FAL AI Video",
         "perplexity": "Perplexity",
         "google_search": "Google Search"
     }
     
-    keyboard = []
+    buttons = []
+    row = []
     
-    for family_key, family_data in families.items():
-        title = family_titles.get(family_key, family_key.capitalize())
+    for fam_key, fam_data in families.items():
+        title = family_titles.get(fam_key, fam_key.capitalize())
         models_count = len(family_data.get("models", []))
         if models_count > 0:
-            keyboard.append([InlineKeyboardButton(
+            row.append(InlineKeyboardButton(
                 text=f"{title} ({models_count})",
-                callback_data=f"family:{category}:{family_key}"
-            )])
-            
-    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+                callback_data=f"family:{category}:{fam_key}"
+            ))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+                
+    if row:
+        buttons.append(row)
+        
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def models_list_menu(category: str, family: str) -> InlineKeyboardMarkup:
-    """Меню выбора конкретной модели."""
+    """Меню выбора конкретной модели (компактно по 2)."""
     models = MODEL_CATALOG.get(category, {}).get(family, {}).get("models", [])
-    keyboard = []
+    buttons = []
+    row = []
     
     for model in models:
-        cost_text = f"💎 {model.get('cost', 0)}" if model.get('cost', 0) > 0 else "Бесплатно"
-        keyboard.append([InlineKeyboardButton(
+        cost_text = f"💎 {model.get('cost', 0)}" if model.get('cost', 0) > 0 else "Беспл."
+        row.append(InlineKeyboardButton(
             text=f"{model['name']} [{cost_text}]",
             callback_data=f"set_model:{model['id']}"
-        )])
+        ))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+            
+    if row:
+        buttons.append(row)
         
-    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"cat:{category}")])
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"cat:{category}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def nano_banana_menu() -> InlineKeyboardMarkup:
     """Меню выбора моделей Nano Banana."""
     models = MODEL_CATALOG.get("gen_nano_banana", {}).get("nano_banana", {}).get("models", [])
-    keyboard = []
+    buttons = []
     
     for model in models:
-        # Убираем стоимость для Free
-        if "free" in model['id']:
+        if "free" in model['id'].lower():
             text = f"🍌 {model['name']}"
         else:
             cost_text = f"💎 {model.get('cost', 0)}"
             text = f"🍌 {model['name']} [{cost_text}]"
             
-        keyboard.append([InlineKeyboardButton(
+        buttons.append([InlineKeyboardButton(
             text=text,
             callback_data=f"set_model:{model['id']}"
         )])
         
-    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def profile_menu() -> InlineKeyboardMarkup:
     """Меню профиля."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💎 Пополнить баланс", callback_data="open_subscription")],
+        [InlineKeyboardButton(text="💎 Пополнить баланс", callback_data="subscriptions")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
     ])
 
