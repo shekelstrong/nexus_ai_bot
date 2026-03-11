@@ -28,6 +28,12 @@ def post_generation_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔄 Заново", callback_data="restart_gen"), InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu")]
     ])
 
+def cancel_generation_menu() -> InlineKeyboardMarkup:
+    """Клавиатура для отмены текущего процесса генерации."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="back_to_menu")]
+    ])
+
 def model_families_menu(category: str) -> InlineKeyboardMarkup:
     """Меню выбора семейства моделей в определенной категории."""
     families = MODEL_CATALOG.get(category, {})
