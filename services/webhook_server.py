@@ -20,7 +20,6 @@ from config import WEB_PORT
 
 logger = setup_logger()
 
-
 class WebhookServer:
     def __init__(self, host: str = "0.0.0.0", port: int = None):
         self.host = host
@@ -44,10 +43,8 @@ class WebhookServer:
         Обработчик возврата пользователя после успешной оплаты.
         Перенаправляет в бота с параметром для отображения успеха.
         """
-        # Получаем order_id из query параметров
         order_id = request.query.get('order_id')
         
-        # Формируем ссылку для возврата в бота
         if order_id:
             redirect_url = f"https://t.me/{(await self.bot.get_me()).username}?start=pay_success_{order_id}"
         else:
@@ -66,37 +63,23 @@ class WebhookServer:
     async def handle_platega_webhook(self, request: web.Request) -> web.Response:
         """
         Обработка вебхука от Platega.
-
-        Ожидаемые данные:
-        {
-            "status": "CONFIRMED",
-            "payload": "order_id",
-            "amount": 100,
-            "currency": "RUB"
-        }
         """
         try:
-            # Пробуем получить JSON
             try:
                 data = await request.json()
             except json.JSONDecodeError:
-                # Если не JSON, пробуем получить form-data
                 form_data = await request.post()
                 data = dict(form_data)
                 logger.info(f"💰 PLATEGA WEBHOOK (form-data): {data}")
 
             logger.info(f"💰 PLATEGA WEBHOOK: {data}")
 
-            # Поддерживаем разные форматы status
             status = str(data.get("status") or data.get("Status") or data.get("STATUS", "")).upper()
 
-            # Для Platega.io проверяем успешный статус
-            # Статус может быть "CONFIRMED", "SUCCESS", "PAID", "completed"
             if status not in ("CONFIRMED", "SUCCESS", "PAID", "COMPLETED"):
                 logger.info(f"Ignoring payment status: {status}")
                 return web.json_response({"status": "ignored"})
 
-            # order_id может быть в разных полях
             order_id = data.get("payload") or data.get("order_id") or data.get("orderId") or data.get("merchant_order_id")
             amount = Decimal(str(data.get("amount") or data.get("Amount") or data.get("total") or 0))
             currency = data.get("currency") or data.get("Currency") or "RUB"
@@ -105,7 +88,6 @@ class WebhookServer:
                 logger.error("No payload/order_id in webhook data")
                 return web.json_response({"status": "error", "msg": "no payload"}, status=400)
 
-            # Обрабатываем платеж через единую функцию process_payment
             await self.process_payment(order_id, amount, currency, "Platega")
 
             return web.json_response({"status": "ok"})
@@ -119,7 +101,7 @@ class WebhookServer:
 
     async def process_payment(self, order_id, amount, currency, method_name):
         """
-        Единая функция обработки платежа (как в рабочем проекте).
+        Единая функция обработки платежа.
         """
         from database.models import User
         from sqlalchemy import select
@@ -135,8 +117,6 @@ class WebhookServer:
         from database.models import TransactionType, TransactionStatus, SubscriptionTier
 
         async with async_session_maker() as session:
-            # Парсим order_id: format "tokens_25_12345" или "tier_BASIC_12345" или "tokens_tokens_25_12345"
-            # Важно: packet_id может содержать подчеркивания (например, "tokens_25"), поэтому берем все части кроме первой и последней
             parts = str(order_id).split("_")
 
             if len(parts) < 3:
@@ -144,21 +124,15 @@ class WebhookServer:
                 return
 
             item_type = parts[0]
-            # user_telegram_id - всегда последний элемент
             user_telegram_id = int(parts[-1])
-            # item_id - все части между первой и последней, соединенные подчеркиванием
-            # Например: "tokens_tokens_25_12345" -> item_type="tokens", item_id="tokens_25"
-            # Или: "tier_BASIC_12345" -> item_type="tier", item_id="BASIC"
+            
             if len(parts) == 3:
-                # Простой случай: "tier_BASIC_12345"
                 item_id = parts[1]
             else:
-                # Сложный случай: "tokens_tokens_25_12345" -> "tokens_25"
                 item_id = "_".join(parts[1:-1])
             
             logger.info(f"Payment: order_id={order_id}, item_type={item_type}, item_id={item_id}, user={user_telegram_id}")
 
-            # Находим пользователя
             res = await session.execute(select(User).where(User.telegram_id == user_telegram_id))
             user = res.scalar_one_or_none()
 
@@ -166,7 +140,6 @@ class WebhookServer:
                 logger.error(f"User not found: {user_telegram_id}")
                 return
 
-            # Создаем транзакцию
             tx = await create_pending_transaction(
                 session=session,
                 user_id=user.id,
@@ -177,9 +150,7 @@ class WebhookServer:
                 extra_data={"item_type": item_type, "item_id": item_id},
             )
 
-            # Активируем товар
             tokens_added = 0
-            video_added = 0
 
             if item_type == "tier":
                 tier = SubscriptionTier(item_id.upper())
@@ -193,18 +164,10 @@ class WebhookServer:
                     tokens_added = packet.get("tokens", 0)
                     await activate_packet(session, user.id, item_id)
 
-            elif item_type == "video":
-                packet = PACKETS.get(item_id)
-                if packet:
-                    video_added = packet.get("generations", 0)
-                    await activate_packet(session, user.id, item_id)
-
-            # Обновляем транзакцию
             tx.status = TransactionStatus.SUCCESS
             tx.completed_at = datetime.utcnow()
             await session.commit()
 
-            # Обработка рефералов (15%/10%/5%)
             chain = await get_referrer_chain(session, user.id)
             total_ref_bonus = Decimal("0")
 
@@ -216,10 +179,8 @@ class WebhookServer:
                 bonus = amount * Decimal(str(bonus_percent))
                 total_ref_bonus += bonus
 
-                # Начисляем бонус
                 referrer.referral_balance += bonus
 
-                # Уведомляем реферера
                 try:
                     await self.bot.send_message(
                         referrer.telegram_id,
@@ -234,14 +195,7 @@ class WebhookServer:
 
             await session.commit()
 
-            # Уведомляем пользователя
-            items = []
-            if tokens_added > 0:
-                items.append(f"🪙 {tokens_added} токенов")
-            if video_added > 0:
-                items.append(f"🎬 {video_added} видео")
-
-            items_str = ", ".join(items) if items else "—"
+            items_str = f"🪙 {tokens_added} токенов" if tokens_added > 0 else "—"
 
             duration_text = ""
             if item_type == "tier":
@@ -249,7 +203,6 @@ class WebhookServer:
                 if plan and plan["days"] > 0:
                     duration_text = f"\n⏳ Срок: <b>{plan['days']} дней</b>"
 
-            # Отправляем уведомление пользователю
             try:
                 await self.bot.send_message(
                     user_telegram_id,
@@ -263,7 +216,6 @@ class WebhookServer:
             except Exception as e:
                 logger.error(f"Failed to notify user {user_telegram_id}: {e}")
 
-            # Уведомляем админам
             from config import ADMIN_IDS
 
             referrer_info = None
@@ -301,18 +253,16 @@ class WebhookServer:
                     logger.warning(f"Failed to notify admin {admin_id}: {e}")
 
             logger.info(
-                f"✅ Platega payment: User {user_telegram_id} +{tokens_added} tokens, "
-                f"+{video_added} video | Amount: {amount} RUB | "
+                f"✅ Platega payment: User {user_telegram_id} +{tokens_added} tokens | "
+                f"Amount: {amount} RUB | "
                 f"Ref bonus: {total_ref_bonus} RUB"
             )
     
     async def start(self, bot):
-        """Запуск сервера"""
         self.bot = bot
         runner = web.AppRunner(self.app)
         await runner.setup()
         
-        # Проверяем наличие SSL сертификатов
         from config import SSL_CERT_PATH, SSL_KEY_PATH, BASE_URL
         
         if SSL_CERT_PATH and SSL_KEY_PATH:
@@ -329,10 +279,7 @@ class WebhookServer:
             protocol = "http"
             logger.info(f"🌐 Webhook server started on http://{self.host}:{self.port} (no SSL)")
             logger.warning("⚠️ SSL не настроен! Для работы вебхуков от Platega необходим HTTPS.")
-            logger.warning(f"⚠️ Настройте SSL_CERT_PATH и SSL_KEY_PATH в .env файле")
         
-        # Выводим полный URL вебхука для настройки в Platega
-        # BASE_URL уже содержит протокол (https://hexus.sbs), поэтому просто добавляем путь
         if BASE_URL.startswith("http://") or BASE_URL.startswith("https://"):
             webhook_url = f"{BASE_URL}/webhook/platega"
         else:
@@ -343,13 +290,10 @@ class WebhookServer:
         return runner
     
     async def stop(self, runner):
-        """Остановка сервера"""
         if runner:
             await runner.cleanup()
             logger.info("Webhook server stopped")
         else:
             logger.info("Webhook server: runner is None, skipping cleanup")
 
-
-# Глобальный экземпляр
 webhook_server = WebhookServer()

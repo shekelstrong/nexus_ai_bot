@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.models import SubscriptionTier
 from keyboards.inline import (
     subscription_tiers_menu,
-    video_packet_menu,
     token_package_menu,
 )
 from services.platega_client import create_invoice
@@ -18,9 +17,7 @@ from services.payments import (
 from handlers.admin.notifications import notify_admin_payment, notify_user_purchase
 from utils.logger import logger
 
-
 router = Router(name="payment_router")
-
 
 @router.callback_query(F.data == "subscriptions")
 async def show_subscriptions(cb: CallbackQuery):
@@ -35,8 +32,7 @@ async def show_subscriptions(cb: CallbackQuery):
         "• VIP: 1700 токенов/месяц\n"
         "• ELITE: 2600 токенов/месяц\n\n"
         "🛒 <b>Пакеты (бессрочно):</b>\n"
-        "• Токены: 25/50/100\n"
-        "• Видео: 10/25 генераций\n\n"
+        "• Токены: 25/50/100\n\n"
         "👇 <b>Выберите раздел:</b>"
     )
 
@@ -46,7 +42,6 @@ async def show_subscriptions(cb: CallbackQuery):
         reply_markup=subscription_tiers_menu(),
     )
     await cb.answer()
-
 
 @router.callback_query((F.data.startswith("tier_")) | (F.data.startswith("tier:")))
 async def tier_selected(cb: CallbackQuery, session: AsyncSession):
@@ -70,12 +65,12 @@ async def tier_selected(cb: CallbackQuery, session: AsyncSession):
         f"✅ <b>Возможности:</b>\n"
         f"• Доступ ко всем текстовым моделям\n"
         f"• Генерация изображений с референсами\n"
+        f"• Генерация видео\n"
         f"• Поиск в интернете (Perplexity)\n"
         f"• Работа с документами\n\n"
         f"💰 <b>Стоимость: {plan['price_rub']} ₽</b>"
     )
     
-    # Создаем платеж Platega
     order_id = f"tier_{tier_name}_{cb.from_user.id}"
     invoice_url = await create_invoice(
         amount_rub=plan["price_rub"],
@@ -88,7 +83,6 @@ async def tier_selected(cb: CallbackQuery, session: AsyncSession):
         await cb.answer("Ошибка создания платежа", show_alert=True)
         return
 
-    # Клавиатура с оплатой
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 Оплатить картой", url=invoice_url)],
@@ -102,30 +96,6 @@ async def tier_selected(cb: CallbackQuery, session: AsyncSession):
     )
     await cb.answer()
 
-
-@router.callback_query((F.data == "packet_video") | (F.data == "packet:video"))
-async def packet_video_selected(cb: CallbackQuery):
-    """Меню выбора видео-пакета"""
-    text = (
-        "🎬 <b>ВИДЕО-ПАКЕТЫ</b>\n\n"
-        "Генерация видео на нейросетях:\n"
-        "• Kling AI\n"
-        "• Google Veo 3.1\n"
-        "• Wan Video\n\n"
-        "✨ <b>Возможности:</b>\n"
-        "• Text-to-Video\n"
-        "• Image-to-Video\n"
-        "• Motion Control\n\n"
-        "👇 <b>Выберите размер пакета:</b>"
-    )
-    await cb.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=video_packet_menu(),
-    )
-    await cb.answer()
-
-
 @router.callback_query((F.data == "packet_tokens") | (F.data == "packet:tokens"))
 async def packet_tokens_selected(cb: CallbackQuery):
     """Меню выбора пакета токенов"""
@@ -134,6 +104,7 @@ async def packet_tokens_selected(cb: CallbackQuery):
         "Дополнительные токены для генерации:\n"
         "• Текст: 1-20 токенов за запрос\n"
         "• Изображения: 1-8 токенов за генерацию\n"
+        "• Видео: 15-35 токенов за генерацию\n"
         "• Поиск: 1-6 токенов за запрос\n\n"
         "⏳ <b>Токены не сгорают!</b>\n\n"
         "👇 <b>Выберите размер пакета:</b>"
@@ -145,7 +116,6 @@ async def packet_tokens_selected(cb: CallbackQuery):
     )
     await cb.answer()
 
-
 @router.callback_query(F.data.startswith("buy_packet:"))
 async def buy_packet_handler(cb: CallbackQuery, session: AsyncSession):
     packet_id = cb.data.split(":", 1)[1]
@@ -155,13 +125,8 @@ async def buy_packet_handler(cb: CallbackQuery, session: AsyncSession):
         return
 
     amount = packet["price_rub"]
-    packet_type = packet.get("type", "tokens")
     
-    # Определяем тип для оплаты
-    pay_type = "video" if packet_type == "video" else "tokens"
-    
-    # Создаем платеж Platega
-    order_id = f"{pay_type}_{packet_id}_{cb.from_user.id}"
+    order_id = f"tokens_{packet_id}_{cb.from_user.id}"
     invoice_url = await create_invoice(
         amount_rub=amount,
         order_id=order_id,
@@ -173,7 +138,6 @@ async def buy_packet_handler(cb: CallbackQuery, session: AsyncSession):
         await cb.answer("Ошибка создания платежа", show_alert=True)
         return
 
-    # Клавиатура с оплатой
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 Оплатить картой", url=invoice_url)],
@@ -189,16 +153,13 @@ async def buy_packet_handler(cb: CallbackQuery, session: AsyncSession):
     )
     await cb.answer()
 
-
 @router.callback_query(F.data.startswith("pay_success:"))
 async def pay_success_handler(cb: CallbackQuery, session: AsyncSession):
     """
     Обработчик успешной оплаты (вызывается после возврата из Platega).
-    Формат: pay_success:{order_id}
     """
     order_id = cb.data.split(":", 1)[1]
     
-    # Парсим order_id
     parts = order_id.split("_")
     if len(parts) < 3:
         await cb.answer("Ошибка обработки платежа", show_alert=True)
@@ -207,7 +168,6 @@ async def pay_success_handler(cb: CallbackQuery, session: AsyncSession):
     item_type = parts[0]
     item_id = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
     
-    # Получаем детали покупки
     details = get_purchase_details(item_type, item_id)
     
     text = (
@@ -222,9 +182,6 @@ async def pay_success_handler(cb: CallbackQuery, session: AsyncSession):
         else:
             text += f"🪙 <b>{details['tokens']} токенов</b> (бессрочно)\n"
     
-    if details['video'] > 0:
-        text += f"🎬 <b>{details['video']} видео</b> (бессрочно)\n"
-    
     if details['duration_days'] > 0:
         text += f"\n⏳ Срок: <b>{details['duration_days']} дней</b>"
     
@@ -232,7 +189,6 @@ async def pay_success_handler(cb: CallbackQuery, session: AsyncSession):
     
     await cb.message.answer(text, parse_mode="HTML")
     await cb.answer()
-
 
 @router.callback_query(F.data.startswith("pay_failed:"))
 async def pay_failed_handler(cb: CallbackQuery):

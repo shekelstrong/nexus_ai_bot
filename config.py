@@ -80,12 +80,6 @@ TOKEN_PACKAGES = {
     "tokens_100": {"price": 1190, "tokens": 100,  "name": "🪙 100 токенов"},
 }
 
-# Видео-пакеты (отдельная валюта - генерации видео)
-VIDEO_PACKAGES = {
-    "video_10":  {"price": 590,  "generations": 10, "name": "🎬 10 видео"},
-    "video_25":  {"price": 1190, "generations": 25, "name": "🎬 25 видео"},
-}
-
 # Старые тарифы (для совместимости, будут удалены позже)
 TARIFFS = SUBSCRIPTION_TIERS
 

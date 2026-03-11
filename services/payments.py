@@ -16,7 +16,7 @@ from database.models import (
 from utils.logger import logger
 
 # Импортируем конфигурацию тарифов и пакетов
-from config import SUBSCRIPTION_TIERS, TOKEN_PACKAGES, VIDEO_PACKAGES, REF_LEVELS, ADMIN_IDS
+from config import SUBSCRIPTION_TIERS, TOKEN_PACKAGES, REF_LEVELS, ADMIN_IDS
 
 # Настраиваем планы согласно ТЗ
 # FREE: 10 токенов в день (сбрасываются ежедневно в scheduler)
@@ -35,9 +35,6 @@ PACKETS = {
     "tokens_25":  {"price_rub": 390,  "tokens": 25,   "type": "tokens", "name": "🪙 25 токенов"},
     "tokens_50":  {"price_rub": 590,  "tokens": 50,   "type": "tokens", "name": "🪙 50 токенов"},
     "tokens_100": {"price_rub": 1190, "tokens": 100,  "type": "tokens", "name": "🪙 100 токенов"},
-    # Видео-пакеты (отдельный тип)
-    "video_10":  {"price_rub": 590,  "generations": 10, "type": "video", "name": "🎬 10 видео"},
-    "video_25":  {"price_rub": 1190, "generations": 25, "type": "video", "name": "🎬 25 видео"},
 }
 
 
@@ -100,7 +97,7 @@ async def activate_packet(
     user_id: int,
     packet_id: str,
 ) -> None:
-    """Активация разового пакета (токены или видео)"""
+    """Активация разового пакета токенов"""
     packet = PACKETS.get(packet_id)
     if not packet:
         logger.error(f"Packet not found: {packet_id}")
@@ -109,12 +106,8 @@ async def activate_packet(
     res = await session.execute(select(User).where(User.id == user_id).with_for_update())
     user = res.scalar_one()
 
-    # В зависимости от типа пакета начисляем токены или видео-генерации
-    if packet.get("type") == "video":
-        user.video_generations_balance += int(packet.get("generations", 0))
-    else:
-        # По умолчанию считаем что это токены
-        user.tokens_balance += int(packet.get("tokens", 0))
+    # Начисляем токены
+    user.tokens_balance += int(packet.get("tokens", 0))
     
     await session.commit()
 
@@ -238,7 +231,7 @@ async def process_platega_payment(
         logger.error(f"Invalid order_id format: {order_id}")
         return False
     
-    item_type = parts[0]  # tokens, video, tier
+    item_type = parts[0]  # tokens, tier
     item_id = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
     user_telegram_id = int(parts[-1])  # Последний элемент - telegram_id
     
@@ -278,7 +271,6 @@ async def process_platega_payment(
     
     # Активируем товар
     tokens_added = 0
-    video_added = 0
     
     if item_type == "tier":
         tier = SubscriptionTier(item_id.upper())
@@ -292,20 +284,14 @@ async def process_platega_payment(
             tokens_added = packet.get("tokens", 0)
             await activate_packet(session, user.id, item_id)
             
-    elif item_type == "video":
-        packet = PACKETS.get(item_id)
-        if packet:
-            video_added = packet.get("generations", 0)
-            await activate_packet(session, user.id, item_id)
-    
     # Обрабатываем реферальные начисления (15%/10%/5%)
     referrer_result = await process_referral_rewards(
         session, user.id, amount_rub, notify_callback
     )
     
     logger.info(
-        f"✅ Platega payment: User {user_telegram_id} +{tokens_added} tokens, "
-        f"+{video_added} video | Amount: {amount_rub} RUB | "
+        f"✅ Platega payment: User {user_telegram_id} +{tokens_added} tokens | "
+        f"Amount: {amount_rub} RUB | "
         f"Ref bonus: {referrer_result['total_bonus']} RUB"
     )
     
@@ -317,9 +303,9 @@ async def get_purchase_details(item_type: str, item_id: str) -> Dict:
     Возвращает детали покупки для отображения пользователю.
     
     Returns:
-        Dict: {'tokens': int, 'video': int, 'duration_days': int}
+        Dict: {'tokens': int, 'duration_days': int}
     """
-    result = {'tokens': 0, 'video': 0, 'duration_days': 0}
+    result = {'tokens': 0, 'duration_days': 0}
     
     if item_type == "tier":
         tier = SubscriptionTier(item_id.upper())
@@ -334,10 +320,4 @@ async def get_purchase_details(item_type: str, item_id: str) -> Dict:
             result['tokens'] = packet.get('tokens', 0)
             result['duration_days'] = 0  # Бессрочно
             
-    elif item_type == "video":
-        packet = PACKETS.get(item_id)
-        if packet:
-            result['video'] = packet.get('generations', 0)
-            result['duration_days'] = 0  # Бессрочно
-    
     return result

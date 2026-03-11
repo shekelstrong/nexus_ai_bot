@@ -62,21 +62,18 @@ STYLE_PROMPTS = {
 }
 STYLES_LIST = list(STYLE_PROMPTS.keys())
 
-# --- СЛОВАРИ ДЛЯ КАРТИНОК ---
-# Папка assets должна быть создана в корне проекта!
 CATEGORY_IMAGES = {
     "gen_nano_banana": "assets/nano_banana.jpg"
 }
 
 FAMILY_IMAGES = {
     "seedream": "assets/seedream.jpg",
-    "gemini_image": "assets/gpt_images.jpg"  # Картинка GPT Images привязана к системному ключу
+    "gemini_image": "assets/gpt_images.jpg"
 }
 
 async def _send_menu(callback: CallbackQuery, text: str, kb: InlineKeyboardMarkup, img_path: str = None):
     """Умный хелпер для переключения между текстовыми меню и меню с картинками"""
     if img_path and os.path.exists(img_path):
-        # Если нужна картинка (и она есть на диске) - удаляем старое сообщение и шлем фото
         try:
             await callback.message.delete()
         except:
@@ -88,16 +85,14 @@ async def _send_menu(callback: CallbackQuery, text: str, kb: InlineKeyboardMarku
             parse_mode="HTML"
         )
     else:
-        # Если картинка не нужна
         if callback.message.photo or callback.message.video or callback.message.document:
-            # Если текущее сообщение - медиа, его нельзя просто отредактировать в текст. Удаляем и шлем заново.
+            # Убираем кнопки у старого сообщения с картинкой, но САМУ КАРТИНКУ ОСТАВЛЯЕМ
             try:
-                await callback.message.delete()
+                await callback.message.edit_reply_markup(reply_markup=None)
             except:
                 pass
             await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
         else:
-            # Если текущее сообщение текстовое - просто редактируем его (так красивее и без миганий)
             try:
                 await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
             except Exception:
@@ -106,6 +101,10 @@ async def _send_menu(callback: CallbackQuery, text: str, kb: InlineKeyboardMarku
                 except:
                     pass
                 await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data == "ignore")
+async def ignore_callback(callback: CallbackQuery):
+    await callback.answer()
 
 @router.callback_query(F.data.startswith("cat:"))
 async def select_category_callback(callback: CallbackQuery):
@@ -164,6 +163,75 @@ async def back_to_menu_handler(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
+@router.callback_query(F.data == "restart_gen")
+async def restart_gen_handler(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(GenState.waiting_for_input)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except:
+        pass
+    
+    data = await state.get_data()
+    style_name = data.get("style", "Без стиля")
+    
+    await callback.message.answer(
+        f"🔄 <b>Новая генерация (те же настройки)</b>\n"
+        f"Текущий стиль: <b>{style_name}</b>\n\n"
+        f"✍️ Напишите новый промпт (и/или прикрепите до 3 фото в качестве референсов).",
+        reply_markup=back_to_menu_kb(), 
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+async def show_styles_page(callback: CallbackQuery, state: FSMContext, page: int, skipped_size: bool = False, is_new_msg: bool = False):
+    items_per_page = 4
+    total_pages = (len(STYLES_LIST) + items_per_page - 1) // items_per_page
+    start_idx = page * items_per_page
+    end_idx = start_idx + items_per_page
+    page_styles = STYLES_LIST[start_idx:end_idx]
+
+    kb_rows = []
+    for i in range(0, len(page_styles), 2):
+        row = [InlineKeyboardButton(text=page_styles[i], callback_data=f"style_{page_styles[i]}")]
+        if i+1 < len(page_styles):
+            row.append(InlineKeyboardButton(text=page_styles[i+1], callback_data=f"style_{page_styles[i+1]}"))
+        kb_rows.append(row)
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ Пред.", callback_data=f"stylepage_{page-1}"))
+    nav_row.append(InlineKeyboardButton(text=f"{page+1}/{total_pages}", callback_data="ignore"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(text="След. ➡️", callback_data=f"stylepage_{page+1}"))
+    
+    if nav_row:
+        kb_rows.append(nav_row)
+
+    kb_rows.append([InlineKeyboardButton(text="🚫 Без стиля", callback_data="style_none")])
+    kb_rows.append([InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_menu")])
+
+    data = await state.get_data()
+    ratio = data.get("ratio", "1:1")
+
+    if skipped_size:
+        text = f"✅ <b>Модель установлена!</b>\n\nТеперь выберите <b>художественный стиль</b>:"
+    else:
+        text = f"✅ <b>Размер {ratio} установлен!</b>\n\nТеперь выберите <b>художественный стиль</b>:"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+
+    if is_new_msg:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    else:
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            try: 
+                await callback.message.delete()
+            except: 
+                pass
+            await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+
 @router.callback_query(F.data.startswith("set_model:"))
 async def set_model_handler(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     model_id = callback.data.split(":", 1)[1]
@@ -177,24 +245,42 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
     info = MODEL_INFO.get(model_id, {})
     name = info.get("name", "Модель")
     category = info.get("category", "gen_text")
+    family = info.get("family", "")
     
     await state.clear()
     
-    # Независимо от того, было ли меню с фото или текстом, 
-    # мы его удаляем и присылаем чистое текстовое сообщение для ввода промпта/настроек.
     try:
-        await callback.message.delete()
+        if callback.message.photo or callback.message.video or callback.message.document:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        else:
+            await callback.message.delete()
     except:
         pass
     
     if category in ["gen_image", "gen_nano_banana"]:
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="1:1", callback_data="size_1:1"), InlineKeyboardButton(text="16:9", callback_data="size_16:9")],
-            [InlineKeyboardButton(text="9:16", callback_data="size_9:16"), InlineKeyboardButton(text="4:3", callback_data="size_4:3")],
-            [InlineKeyboardButton(text="3:4", callback_data="size_3:4"), InlineKeyboardButton(text="21:9", callback_data="size_21:9")],
-            [InlineKeyboardButton(text="2:3", callback_data="size_2:3"), InlineKeyboardButton(text="3:2", callback_data="size_3:2")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
-        ])
+        # Обычная Nano Banana не поддерживает форматы — пропускаем их
+        if model_id == "google/gemini-2.5-flash-image":
+            await state.update_data(ratio="1:1", size_prompt="")
+            await show_styles_page(callback, state, 0, skipped_size=True, is_new_msg=True)
+            await callback.answer()
+            return
+
+        # GPT Images поддерживает только 1:1, 2:3, 3:2
+        if family == "gemini_image":
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="1:1", callback_data="size_1:1")],
+                [InlineKeyboardButton(text="2:3", callback_data="size_2:3"), InlineKeyboardButton(text="3:2", callback_data="size_3:2")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
+            ])
+        else:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="1:1", callback_data="size_1:1"), InlineKeyboardButton(text="16:9", callback_data="size_16:9")],
+                [InlineKeyboardButton(text="9:16", callback_data="size_9:16"), InlineKeyboardButton(text="4:3", callback_data="size_4:3")],
+                [InlineKeyboardButton(text="3:4", callback_data="size_3:4"), InlineKeyboardButton(text="21:9", callback_data="size_21:9")],
+                [InlineKeyboardButton(text="2:3", callback_data="size_2:3"), InlineKeyboardButton(text="3:2", callback_data="size_3:2")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
+            ])
+        
         text = f"✅ <b>Модель установлена!</b>\nВыбрана: <b>{name}</b>\n\nТеперь выберите соотношение сторон (размер):"
         await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
         await callback.answer()
@@ -236,22 +322,13 @@ async def set_size(cb: CallbackQuery, state: FSMContext):
     ratio = cb.data.split("_")[1]
     size_prompt = SIZE_PROMPTS.get(ratio, "")
     await state.update_data(ratio=ratio, size_prompt=size_prompt)
-    
-    items = STYLES_LIST
-    kb_rows = []
-    for i in range(0, len(items), 2):
-        row = [InlineKeyboardButton(text=items[i], callback_data=f"style_{items[i]}")]
-        if i+1 < len(items): 
-            row.append(InlineKeyboardButton(text=items[i+1], callback_data=f"style_{items[i+1]}"))
-        kb_rows.append(row)
-    kb_rows.append([InlineKeyboardButton(text="🚫 Без стиля", callback_data="style_none")])
-    kb_rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])
-    
-    await cb.message.edit_text(
-        f"✅ <b>Размер {ratio} установлен!</b>\n\nТеперь выберите <b>художественный стиль</b>:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
-        parse_mode="HTML"
-    )
+    await show_styles_page(cb, state, page=0)
+    await cb.answer()
+
+@router.callback_query(F.data.startswith("stylepage_"))
+async def style_page_handler(cb: CallbackQuery, state: FSMContext):
+    page = int(cb.data.split("_")[1])
+    await show_styles_page(cb, state, page)
     await cb.answer()
 
 @router.callback_query(F.data.startswith("style_"))
@@ -269,7 +346,16 @@ async def set_style(cb: CallbackQuery, state: FSMContext):
     
     text = (
         f"✅ <b>Стиль: {style_name}</b>\n\n"
-        "✍️ Все готово! Теперь просто <b>напишите промпт</b> (описание картинки) и/или прикрепите <b>до 3 фото</b> как референсы в чат."
+        "✍️ Все готово! Теперь просто <b>напишите промпт</b> (описание картинки) и/или прикрепите <b>до 3 фото</b> в качестве референсов."
     )
-    await cb.message.edit_text(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
+    
+    try:
+        await cb.message.edit_text(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
+    except Exception:
+        try:
+            await cb.message.delete()
+        except:
+            pass
+        await cb.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
+    
     await cb.answer()
