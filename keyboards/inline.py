@@ -1,5 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from model_config import MODEL_CATALOG, SUBSCRIPTION_TIERS
+from model_config import MODEL_CATALOG
+from config import SUBSCRIPTION_TIERS, TOKEN_PACKAGES
 
 def main_menu() -> InlineKeyboardMarkup:
     """Главное меню бота."""
@@ -112,16 +113,28 @@ def profile_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
     ])
 
-def subscription_menu() -> InlineKeyboardMarkup:
-    """Меню подписок (теперь только токены)."""
+def subscription_tiers_menu() -> InlineKeyboardMarkup:
+    """Меню тарифов подписки и пакетов."""
     keyboard = []
     for tier_id, tier_data in SUBSCRIPTION_TIERS.items():
         if tier_id == "FREE":
             continue
         keyboard.append([InlineKeyboardButton(
             text=f"{tier_data['name']} - {tier_data['price']}₽",
-            callback_data=f"buy_sub:{tier_id}"
+            callback_data=f"tier_{tier_id}"
         )])
     
+    keyboard.append([InlineKeyboardButton(text="🪙 Пакеты токенов", callback_data="packet_tokens")])
     keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def token_package_menu() -> InlineKeyboardMarkup:
+    """Меню покупки пакетов токенов."""
+    keyboard = []
+    for packet_id, packet_data in TOKEN_PACKAGES.items():
+        keyboard.append([InlineKeyboardButton(
+            text=f"{packet_data['name']} - {packet_data['price']}₽",
+            callback_data=f"buy_packet:{packet_id}"
+        )])
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="subscriptions")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
