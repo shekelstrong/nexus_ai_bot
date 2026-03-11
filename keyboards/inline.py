@@ -81,7 +81,8 @@ def model_families_menu(category: str) -> InlineKeyboardMarkup:
     
     for fam_key, fam_data in families.items():
         title = family_titles.get(fam_key, fam_key.capitalize())
-        models_count = len(family_data.get("models", []))
+        # Ошибка была здесь: было family_data вместо fam_data
+        models_count = len(fam_data.get("models", []))
         if models_count > 0:
             row.append(InlineKeyboardButton(
                 text=f"{title} ({models_count})",
@@ -115,7 +116,7 @@ def models_list_menu(category: str, family: str) -> InlineKeyboardMarkup:
             
     if row:
         buttons.append(row)
-        
+            
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"cat:{category}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
