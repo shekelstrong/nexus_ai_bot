@@ -69,7 +69,8 @@ async def step_first_image(message: Message, state: FSMContext, session: AsyncSe
 
     if "motion-control" in model_id:
         await message.answer(
-            "<b>Шаг 2:</b> Отлично! Теперь отправьте <b>видео</b> (референс движения).",
+            "<b>Шаг 2:</b> Отлично! Теперь отправьте <b>видео</b> (референс движения).\n\n"
+            "⚠️ <i>Максимальный размер видео — 20 МБ.</i>",
             parse_mode="HTML",
         )
         await state.set_state(GenState.waiting_for_reference_video)
@@ -87,8 +88,10 @@ async def step_first_image(message: Message, state: FSMContext, session: AsyncSe
 async def step_reference_video(message: Message, state: FSMContext, session: AsyncSession):
     video = message.video
     logger.info(f"step_reference_video: получено видео, file_id={video.file_id}, размер {video.file_size / (1024*1024):.2f} MB")
-    if video.file_size > 50*1024*1024:
-        await message.answer("❌ Видео слишком большое! Пожалуйста, до 50 MB.")
+    
+    # Telegram Bot API (без локального сервера) разрешает скачивать файлы только до 20 МБ
+    if video.file_size > 20*1024*1024:
+        await message.answer("❌ Видео слишком большое! Telegram разрешает ботам скачивать файлы только до 20 MB. Пожалуйста, сожмите видео перед отправкой.")
         return
 
     data = await state.get_data()
@@ -98,7 +101,7 @@ async def step_reference_video(message: Message, state: FSMContext, session: Asy
         await state.clear()
         return
 
-    prompt = message.caption or "An african american woman dancing"
+    prompt = message.caption or "A person performing an action from the reference video"
     await state.update_data(prompt=prompt)
 
     logger.info(f"step_reference_video: запускаем complex_generation, first_image={first_image_file_id}, video={video.file_id}, prompt={prompt}")
@@ -219,11 +222,7 @@ async def cleanup_completed_album(media_group_id: str):
     await asyncio.sleep(60)
     _completed_albums.discard(media_group_id)
 
-async def _process_single_message(
-    message: Message,
-    state: FSMContext,
-    session: AsyncSession
-):
+async def _process_single_message(message: Message, state: FSMContext, session: AsyncSession):
     current_state = await state.get_state()
     if current_state == GenState.generating:
         logger.info(f"_process_single_message: генерация уже идет, игнорируем")
@@ -317,7 +316,6 @@ async def run_complex_generation(
     model_info = ALL_MODELS.get(model_id, {"cost": 1, "name": "Unknown"})
     cost = model_info.get("cost", 1)
 
-    # Проверяем токены (вместо старого баланса видео)
     if user.tokens_balance < cost:
         await message.answer(
             f"❌ <b>Недостаточно токенов!</b> Нужно {cost}.\n\n"
@@ -666,7 +664,24 @@ async def _get_file_url_or_base64(bot, file_id, is_video=False):
     if is_video:
         telegram_url = f"https://api.telegram.org/file/bot{bot.token}/{file.file_path}"
         safe_url = telegram_url.replace(bot.token, "***")
-        logger.info(f"Video URL (no download): {safe_url}")
+        logger.info(f"Video URL: {safe_url}. Downloading and uploading to FAL Storage...")
+        
+        # ЗАГРУЖАЕМ ВИДЕО В FAL AI НАПРЯМУЮ, ЧТОБЫ ИЗБЕЖАТЬ БЛОКИРОВОК TELEGRAM URL
+        try:
+            file_bytes_io = await bot.download_file(file.file_path)
+            file_bytes = file_bytes_io.read()
+            mime = "video/mp4"
+            filename = f"{file_id}.mp4"
+            
+            url = await upload_file_to_fal(file_bytes, filename, mime)
+            if url:
+                logger.info(f"Video successfully uploaded to FAL Storage: {url}")
+                return url
+            else:
+                logger.warning("Failed to upload video to FAL Storage, falling back to Telegram URL")
+        except Exception as e:
+            logger.error(f"Error downloading/uploading video to FAL: {e}")
+            
         return telegram_url
 
     file_bytes_io = await bot.download_file(file.file_path)

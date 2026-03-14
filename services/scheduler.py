@@ -1,80 +1,70 @@
 import asyncio
 from datetime import datetime, timedelta
-
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from database.session import async_session_maker
 from database.models import User, SubscriptionTier
 from utils.logger import logger
+from config import SUBSCRIPTION_TIERS
 
+async def reset_free_tokens():
+    """Сбрасывает токены до лимита для пользователей на тарифе FREE."""
+    try:
+        async with async_session_maker() as session:
+            free_limit = SUBSCRIPTION_TIERS["FREE"]["tokens"]
+            
+            # ИСПРАВЛЕНИЕ: Берем .value у Enum, чтобы база корректно нашла FREE пользователей
+            result = await session.execute(
+                update(User)
+                .where(User.subscription_tier == SubscriptionTier.FREE.value)
+                .values(tokens_balance=free_limit)
+            )
+            await session.commit()
+            logger.info(f"✅ Ежедневный сброс токенов выполнен. Всем FREE пользователям начислено {free_limit} токенов.")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при сбросе токенов: {e}")
 
 async def daily_token_reset_task():
-    """
-    Фоновая задача: каждый час проверяет FREE-юзеров,
-    у которых daily_tokens_reset_at <= now.
-    Сбрасывает токены до 10 и переносит reset на +24ч.
-    """
+    """Фоновая задача для ежедневного сброса токенов (в полночь по серверному времени)."""
+    logger.info("⏳ Планировщик сброса токенов запущен.")
     while True:
-        try:
-            async with async_session_maker() as session:
-                now = datetime.utcnow()
-
-                # Найти FREE-юзеров, которым пора сбросить токены
-                result = await session.execute(
-                    select(User).where(
-                        User.subscription_tier == SubscriptionTier.FREE,
-                        User.daily_tokens_reset_at <= now,
-                    )
-                )
-                users = result.scalars().all()
-
-                for user in users:
-                    # Сбрасываем токены до 10 (ежедневный лимит FREE)
-                    user.tokens_balance = 10
-                    user.daily_tokens_reset_at = now + timedelta(days=1)
-                    logger.info(f"Daily token reset for user {user.telegram_id}")
-
-                if users:
-                    await session.commit()
-                    logger.info(f"Daily token reset: {len(users)} users processed")
-
-        except Exception as e:
-            logger.exception("Error in daily_token_reset_task")
-
-        await asyncio.sleep(3600)  # каждый час
-
+        now = datetime.utcnow()
+        # Вычисляем время до следующей полуночи
+        next_midnight = datetime(now.year, now.month, now.day) + timedelta(days=1)
+        sleep_seconds = (next_midnight - now).total_seconds()
+        
+        logger.info(f"⏳ Планировщик токенов ждет {sleep_seconds:.0f} секунд до полуночи.")
+        await asyncio.sleep(sleep_seconds)
+        
+        # Наступила полночь - сбрасываем токены
+        await reset_free_tokens()
 
 async def subscription_expiration_task():
-    """
-    Проверяет истёкшие подписки и откатывает на FREE
-    """
+    """Фоновая задача для проверки истекших подписок."""
+    logger.info("⏳ Планировщик проверки подписок запущен.")
     while True:
         try:
             async with async_session_maker() as session:
                 now = datetime.utcnow()
-
+                # Ищем пользователей с истекшей подпиской
                 result = await session.execute(
                     select(User).where(
-                        User.subscription_tier != SubscriptionTier.FREE,
-                        User.subscription_expires_at != None,
-                        User.subscription_expires_at <= now,
+                        (User.subscription_expires_at <= now) & 
+                        (User.subscription_tier != SubscriptionTier.FREE.value)
                     )
                 )
-                users = result.scalars().all()
-
-                for user in users:
-                    logger.info(f"Subscription expired for user {user.telegram_id}, rolling back to FREE")
+                expired_users = result.scalars().all()
+                
+                for user in expired_users:
+                    logger.info(f"🔻 Подписка истекла у пользователя {user.telegram_id}")
                     user.subscription_tier = SubscriptionTier.FREE.value
-                    user.subscription_expires_at = None
                     user.is_premium = False
-                    # Токены не трогаем (могут быть уже потрачены)
-
-                if users:
+                    # Сбрасываем токены до базового тарифа FREE
+                    user.tokens_balance = SUBSCRIPTION_TIERS["FREE"]["tokens"]
+                
+                if expired_users:
                     await session.commit()
-                    logger.info(f"Subscription expiration: {len(users)} users processed")
-
         except Exception as e:
-            logger.exception("Error in subscription_expiration_task")
-
-        await asyncio.sleep(3600)  # каждый час
+            logger.error(f"❌ Ошибка в проверке подписок: {e}")
+            
+        # Проверяем раз в час
+        await asyncio.sleep(3600)

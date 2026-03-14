@@ -1,234 +1,99 @@
+import qrcode
+import io
 from datetime import datetime, timedelta
-
-
 from aiogram import Router, F
+from aiogram.types import CallbackQuery, Message, BufferedInputFile
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
-from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
-
-from database.models import User, Generation, GenerationStatus
-from keyboards.inline import main_menu
-from utils.logger import logger
-from model_config import MODEL_CATALOG
-
+from database.models import User, SubscriptionTier
+from keyboards.inline import profile_menu
+from config import TEXTS, SUBSCRIPTION_TIERS
 
 router = Router(name="profile_router")
 
-
-HISTORY_PAGE_SIZE = 5
-
-
-def _model_category(model_id: str) -> str:
-    for category, families in MODEL_CATALOG.items():
-        for fam_data in families.values():
-            for m in fam_data.get("models", []):
-                if m.get("id") == model_id:
-                    return category
-    return "unknown"
-
-
-def _fmt_dt(dt):
-    if not dt:
-        return "—"
-    return dt.strftime("%Y-%m-%d %H:%M")
-
-
-
-@router.message(Command("profile"))
-async def cmd_profile(message: Message, session: AsyncSession):
-    res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+async def _send_profile_msg(bot, chat_id, user_id, session: AsyncSession, old_message: Message = None):
+    res = await session.execute(select(User).where(User.telegram_id == user_id))
     user = res.scalar_one_or_none()
+
     if not user:
-        await message.answer("Сначала нажмите /start", reply_markup=main_menu())
+        if old_message:
+            await bot.send_message(chat_id, "Пользователь не найден")
         return
 
-    # Форматируем дату истечения подписки
-    expires_str = "—"
-    if user.subscription_expires_at:
-        expires_str = user.subscription_expires_at.strftime("%Y-%m-%d %H:%M")
+    bot_info = await bot.get_me()
+    ref_link = f"https://t.me/{bot_info.username}?start={user.referral_code}"
 
-    # Информация о токенах в зависимости от тарифа
-    if user.subscription_tier == "FREE":
-        tokens_info = f"🪙 <b>Токены:</b> {user.tokens_balance}/10 (ежедневный лимит)"
-        # Рассчитываем время до сброса
-        now = datetime.utcnow()
-        if user.daily_tokens_reset_at:
-            reset_time = user.daily_tokens_reset_at
-            if reset_time > now:
-                time_left = reset_time - now
-                hours = int(time_left.total_seconds() // 3600)
-                minutes = int((time_left.total_seconds() % 3600) // 60)
-                tokens_info += f"\n⏳ <b>Сброс через:</b> {hours}ч {minutes}м"
-    else:
-        tokens_info = f"🪙 <b>Токены:</b> {user.tokens_balance}"
-        if user.subscription_expires_at:
-            tokens_info += f" (подписка до {expires_str})"
-
-    text = (
-        f"👤 <b>Профиль</b>\n"
-        f"ID: <code>{user.telegram_id}</code>\n\n"
-        f"{tokens_info}\n"
-        f"🎬 <b>Видео-генерации:</b> {user.video_generations_balance}\n"
-        f"💎 <b>Тариф:</b> {user.subscription_tier}\n"
-        f"⏳ <b>Подписка до:</b> {expires_str}\n\n"
-        f"🎁 <b>Реф. баланс:</b> {user.referral_balance}₽\n"
-        f"🔗 <b>Ваш рефкод:</b> <code>{user.referral_code}</code>\n"
+    # Генерация QR кода для реферальной ссылки
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
     )
-    await message.answer(text, parse_mode="HTML", reply_markup=main_menu())
+    qr.add_data(ref_link)
+    qr.make(fit=True)
 
-
-
-@router.callback_query(F.data == "profile")
-async def profile_cb(cb: CallbackQuery, session: AsyncSession):
-    from aiogram.exceptions import TelegramBadRequest
+    img = qr.make_image(fill_color="black", back_color="white")
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    img_byte_arr.seek(0)
     
-    res = await session.execute(select(User).where(User.telegram_id == cb.from_user.id))
-    user = res.scalar_one_or_none()
-    if not user:
-        try:
-            await cb.message.edit_text("Сначала нажмите /start", reply_markup=main_menu())
-        except TelegramBadRequest:
-            pass  # Игнорируем, если контент не изменился
-        await cb.answer()
-        return
+    qr_photo = BufferedInputFile(img_byte_arr.getvalue(), filename="qr.png")
 
-    # Форматируем дату истечения подписки
-    expires_str = "—"
-    if user.subscription_expires_at:
-        expires_str = user.subscription_expires_at.strftime("%Y-%m-%d %H:%M")
-
-    # Информация о токенах в зависимости от тарифа
-    if user.subscription_tier == "FREE":
-        tokens_info = f"🪙 <b>Токены:</b> {user.tokens_balance}/10 (ежедневный лимит)"
-        # Рассчитываем время до сброса
-        now = datetime.utcnow()
-        if user.daily_tokens_reset_at:
-            reset_time = user.daily_tokens_reset_at
-            if reset_time > now:
-                time_left = reset_time - now
-                hours = int(time_left.total_seconds() // 3600)
-                minutes = int((time_left.total_seconds() % 3600) // 60)
-                tokens_info += f"\n⏳ <b>Сброс через:</b> {hours}ч {minutes}м"
+    # Расчет времени до сброса для FREE тарифа
+    now = datetime.utcnow()
+    next_midnight = datetime(now.year, now.month, now.day) + timedelta(days=1)
+    time_left = next_midnight - now
+    hours, remainder = divmod(time_left.total_seconds(), 3600)
+    minutes, _ = divmod(remainder, 60)
+    
+    # Формирование текста
+    text = f"👤 <b>Профиль</b>\nID: <code>{user.telegram_id}</code>\n\n"
+    
+    if user.subscription_tier == SubscriptionTier.FREE.value:
+        free_limit = SUBSCRIPTION_TIERS["FREE"]["tokens"]
+        text += f"🪙 <b>Токены:</b> {user.tokens_balance}/{free_limit} (ежедневный лимит)\n"
+        text += f"⏳ <b>Сброс через:</b> {int(hours)}ч {int(minutes)}м\n"
     else:
-        tokens_info = f"🪙 <b>Токены:</b> {user.tokens_balance}"
-        if user.subscription_expires_at:
-            tokens_info += f" (подписка до {expires_str})"
-
-    text = (
-        f"👤 <b>Профиль</b>\n"
-        f"ID: <code>{user.telegram_id}</code>\n\n"
-        f"{tokens_info}\n"
-        f"🎬 <b>Видео-генерации:</b> {user.video_generations_balance}\n"
-        f"💎 <b>Тариф:</b> {user.subscription_tier}\n"
-        f"⏳ <b>Подписка до:</b> {expires_str}\n\n"
-        f"🎁 <b>Реф. баланс:</b> {user.referral_balance}₽\n"
+        text += f"🪙 <b>Токены:</b> {user.tokens_balance}\n"
+        
+    text += f"🎬 <b>Видео-генерации:</b> {user.video_generations_balance}\n"
+    text += f"💎 <b>Тариф:</b> {user.subscription_tier}\n"
+    
+    if user.subscription_expires_at:
+        text += f"⏳ <b>Подписка до:</b> {user.subscription_expires_at.strftime('%d.%m.%Y %H:%M')}\n"
+    else:
+        text += f"⏳ <b>Подписка до:</b> —\n"
+        
+    text += (
+        f"\n🎁 <b>Реф. баланс:</b> {user.referral_balance:.2f}₽\n"
         f"🔗 <b>Ваш рефкод:</b> <code>{user.referral_code}</code>\n\n"
         f"Нажмите «История», чтобы посмотреть генерации."
     )
-    
-    try:
-        await cb.message.edit_text(text, parse_mode="HTML", reply_markup=main_menu())
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            # Игнорируем ошибку, если контент не изменился
+
+    if old_message:
+        try:
+            await old_message.delete()
+        except:
             pass
-        else:
-            raise
+
+    await bot.send_photo(
+        chat_id=chat_id,
+        photo=qr_photo,
+        caption=text,
+        parse_mode="HTML",
+        reply_markup=profile_menu()
+    )
+
+@router.callback_query(F.data.in_(["profile", "my_profile"]))
+async def show_profile_cb(cb: CallbackQuery, session: AsyncSession):
+    """Обработчик для inline-кнопки Профиль"""
+    await _send_profile_msg(cb.bot, cb.message.chat.id, cb.from_user.id, session, cb.message)
     await cb.answer()
 
-
-
-@router.callback_query(F.data == "history")
-async def history_first(cb: CallbackQuery, session: AsyncSession):
-    await _show_history(cb, session, page=0)
-
-
-
-@router.callback_query(F.data.startswith("history_page_"))
-async def history_page(cb: CallbackQuery, session: AsyncSession):
-    page = int(cb.data.split("_")[-1])
-    await _show_history(cb, session, page=page)
-
-
-
-async def _show_history(cb: CallbackQuery, session: AsyncSession, page: int):
-    res_user = await session.execute(select(User).where(User.telegram_id == cb.from_user.id))
-    user = res_user.scalar_one_or_none()
-    if not user:
-        await cb.message.edit_text("Сначала нажмите /start", reply_markup=main_menu())
-        await cb.answer()
-        return
-
-
-    offset = page * HISTORY_PAGE_SIZE
-
-
-    total_res = await session.execute(
-        select(func.count(Generation.id)).where(Generation.user_id == user.id)
-    )
-    total = total_res.scalar_one()
-
-
-    gens_res = await session.execute(
-        select(Generation)
-        .where(Generation.user_id == user.id)
-        .order_by(desc(Generation.created_at))
-        .limit(HISTORY_PAGE_SIZE)
-        .offset(offset)
-    )
-    gens = gens_res.scalars().all()
-
-
-    if not gens:
-        await cb.message.edit_text("📊 История пуста.", reply_markup=main_menu())
-        await cb.answer()
-        return
-
-
-    lines = [f"📊 <b>История</b> (стр. {page+1})\n"]
-    for g in gens:
-        prompt_short = (g.prompt[:80] + "…") if len(g.prompt) > 80 else g.prompt
-        category = _model_category(g.model_name)
-        lines.append(
-            f"• <b>{category}</b> | <code>{g.model_name}</code>\n"
-            f"  {prompt_short}\n"
-            f"  Статус: <b>{g.status}</b> | Стоимость: <b>{g.cost}</b>\n"
-            f"  ID: <code>{g.id}</code> | {_fmt_dt(g.created_at)}\n"
-        )
-
-
-    nav = []
-    if page > 0:
-        nav.append(f"history_page_{page-1}")
-    if offset + HISTORY_PAGE_SIZE < total:
-        nav.append(f"history_page_{page+1}")
-
-
-    text = "\n".join(lines)[:4096]
-    if nav:
-        text += "\n\nДля навигации:\n" + "\n".join([f"• /history {x.split('_')[-1]}" for x in nav])
-
-
-    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=main_menu())
-    await cb.answer()
-
-
-
-@router.message(Command("history"))
-async def history_cmd(message: Message, session: AsyncSession):
-    # /history or /history 2
-    parts = (message.text or "").split()
-    page = 0
-    if len(parts) > 1 and parts[1].isdigit():
-        page = max(0, int(parts[1]) - 1)
-
-
-    # имитируем callback
-    class Dummy:
-        from_user = message.from_user
-        message = message
-        async def answer(self, *args, **kwargs): ...
-    dummy = Dummy()
-    await _show_history(dummy, session, page=page)
+@router.message(Command("account"))
+async def cmd_account(message: Message, session: AsyncSession):
+    """Обработчик команды /account из меню"""
+    await _send_profile_msg(message.bot, message.chat.id, message.from_user.id, session)
