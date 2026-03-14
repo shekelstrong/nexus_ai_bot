@@ -1,8 +1,6 @@
-import qrcode
-import io
 from datetime import datetime, timedelta
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message, BufferedInputFile
+from aiogram.types import CallbackQuery, Message
 from aiogram.filters import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -21,26 +19,6 @@ async def _send_profile_msg(bot, chat_id, user_id, session: AsyncSession, old_me
         if old_message:
             await bot.send_message(chat_id, "Пользователь не найден")
         return
-
-    bot_info = await bot.get_me()
-    ref_link = f"https://t.me/{bot_info.username}?start={user.referral_code}"
-
-    # Генерация QR кода для реферальной ссылки
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(ref_link)
-    qr.make(fit=True)
-
-    img = qr.make_image(fill_color="black", back_color="white")
-    img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='PNG')
-    img_byte_arr.seek(0)
-    
-    qr_photo = BufferedInputFile(img_byte_arr.getvalue(), filename="qr.png")
 
     # Расчет времени до сброса для FREE тарифа
     now = datetime.utcnow()
@@ -73,19 +51,18 @@ async def _send_profile_msg(bot, chat_id, user_id, session: AsyncSession, old_me
         f"Нажмите «История», чтобы посмотреть генерации."
     )
 
+    # Аккуратная отправка или редактирование сообщения (чтобы не плодить новые)
     if old_message:
         try:
-            await old_message.delete()
-        except:
-            pass
-
-    await bot.send_photo(
-        chat_id=chat_id,
-        photo=qr_photo,
-        caption=text,
-        parse_mode="HTML",
-        reply_markup=profile_menu()
-    )
+            if old_message.photo or old_message.video or old_message.document:
+                await old_message.delete()
+                await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", reply_markup=profile_menu())
+            else:
+                await old_message.edit_text(text=text, parse_mode="HTML", reply_markup=profile_menu())
+        except Exception:
+            await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", reply_markup=profile_menu())
+    else:
+        await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", reply_markup=profile_menu())
 
 @router.callback_query(F.data.in_(["profile", "my_profile"]))
 async def show_profile_cb(cb: CallbackQuery, session: AsyncSession):
