@@ -5,7 +5,7 @@ from aiogram.filters import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from database.models import User, SubscriptionTier
+from database.models import User, SubscriptionTier, Generation
 from keyboards.inline import profile_menu, back_to_menu_kb
 from config import TEXTS, SUBSCRIPTION_TIERS
 
@@ -75,15 +75,46 @@ async def cmd_account(message: Message, session: AsyncSession):
     """Обработчик команды /account из меню"""
     await _send_profile_msg(message.bot, message.chat.id, message.from_user.id, session)
 
-# --- НОВЫЙ ОБРАБОТЧИК ДЛЯ КНОПКИ "ИСТОРИЯ" ---
+# --- ОБРАБОТЧИК ДЛЯ КНОПКИ "ИСТОРИЯ" С ПОДКЛЮЧЕНИЕМ К БД ---
 @router.callback_query(F.data == "history")
-async def show_history_cb(cb: CallbackQuery):
-    """Обработчик для inline-кнопки История"""
-    text = (
-        "📊 <b>История генераций</b>\n\n"
-        "🚧 <i>Этот раздел находится в активной разработке.</i>\n\n"
-        "Скоро здесь появится список всех ваших последних запросов и сгенерированных материалов!"
+async def show_history_cb(cb: CallbackQuery, session: AsyncSession):
+    """Обработчик для inline-кнопки История (показывает 5 последних генераций)"""
+    
+    # Получаем внутренний ID пользователя из БД
+    res = await session.execute(select(User.id).where(User.telegram_id == cb.from_user.id))
+    user_id = res.scalar_one_or_none()
+
+    if not user_id:
+        await cb.answer("Пользователь не найден в базе", show_alert=True)
+        return
+
+    # Запрашиваем последние 5 генераций из таблицы Generation
+    gens_res = await session.execute(
+        select(Generation)
+        .where(Generation.user_id == user_id)
+        .order_by(Generation.created_at.desc())
+        .limit(5)
     )
+    generations = gens_res.scalars().all()
+
+    if not generations:
+        text = "📊 <b>История генераций</b>\n\nУ вас пока нет истории генераций. Попробуйте создать что-нибудь!"
+    else:
+        text = "📊 <b>Последние 5 запросов:</b>\n\n"
+        for i, gen in enumerate(generations, 1):
+            # Обрезаем длинный промпт, чтобы сообщение не было гигантским
+            short_prompt = gen.prompt[:50] + "..." if len(gen.prompt) > 50 else gen.prompt
+            
+            # Эмодзи статуса (берем из GenerationStatus)
+            status_emoji = "✅" if gen.status == "COMPLETED" else "❌" if gen.status == "FAILED" else "⏳"
+            
+            # Форматируем дату (например: 26.03 14:30)
+            date_str = gen.created_at.strftime('%d.%m %H:%M')
+            
+            text += f"{i}. {status_emoji} <b>{gen.model_name}</b> ({date_str})\n"
+            text += f"📝 <i>{short_prompt}</i>\n"
+            text += f"💎 Стоимость: {gen.cost} токенов\n\n"
+
     try:
         if cb.message.photo or cb.message.video or cb.message.document:
             await cb.message.delete()

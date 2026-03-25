@@ -25,7 +25,7 @@ def main_menu() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🎁 Рефералка", callback_data="referrals", style="success")
         ],
         [
-            InlineKeyboardButton(text="👨‍💻 Поддержка", callback_data="support")
+            InlineKeyboardButton(text="👨‍💻 Поддержка", callback_data="support", style="danger")
         ]
     ])
     return kb
@@ -33,7 +33,7 @@ def main_menu() -> InlineKeyboardMarkup:
 def back_to_menu_kb() -> InlineKeyboardMarkup:
     """Кнопка возврата в главное меню."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu")]
+        [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu", style="success")]
     ])
 
 def post_generation_kb() -> InlineKeyboardMarkup:
@@ -41,7 +41,7 @@ def post_generation_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🔄 Заново", callback_data="restart_gen", style="primary"), 
-            InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu")
+            InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu", style="success")
         ]
     ])
 
@@ -98,7 +98,7 @@ def model_families_menu(category: str) -> InlineKeyboardMarkup:
     if row:
         buttons.append(row)
         
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def models_list_menu(category: str, family: str) -> InlineKeyboardMarkup:
@@ -121,7 +121,7 @@ def models_list_menu(category: str, family: str) -> InlineKeyboardMarkup:
     if row:
         buttons.append(row)
             
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"cat:{category}")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"cat:{category}", style="success")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def nano_banana_menu() -> InlineKeyboardMarkup:
@@ -142,14 +142,14 @@ def nano_banana_menu() -> InlineKeyboardMarkup:
             style="primary"
         )])
         
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def profile_menu() -> InlineKeyboardMarkup:
     """Меню профиля."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💎 Пополнить баланс", callback_data="subscriptions", style="success")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
     ])
 
 def subscription_tiers_menu() -> InlineKeyboardMarkup:
@@ -165,7 +165,7 @@ def subscription_tiers_menu() -> InlineKeyboardMarkup:
         )])
     
     keyboard.append([InlineKeyboardButton(text="🪙 Пакеты токенов", callback_data="packet_tokens", style="primary")])
-    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def token_package_menu() -> InlineKeyboardMarkup:
@@ -177,5 +177,5 @@ def token_package_menu() -> InlineKeyboardMarkup:
             callback_data=f"buy_packet:{packet_id}",
             style="success"
         )])
-    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="subscriptions")])
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="subscriptions", style="success")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

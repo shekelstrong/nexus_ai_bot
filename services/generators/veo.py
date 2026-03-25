@@ -23,15 +23,15 @@ class VeoGenerator:
 
         # Режимы
         if "first-last" in model_id:
-            # Требует first_frame_url (start) и last_frame_url (end)
+            # ИСПРАВЛЕНИЕ: Fal AI по факту требует first_frame_image_url и last_frame_image_url
             if not image_url: return None
-            payload["first_frame_url"] = image_url
+            payload["first_frame_image_url"] = image_url
             
             end_url = extra_params.get("second_image_url") if extra_params else None
             if not end_url:
                 logger.warning("Veo First-Last: No second image")
                 return None
-            payload["last_frame_url"] = end_url
+            payload["last_frame_image_url"] = end_url
 
         elif "image-to-video" in model_id or "reference-to-video" in model_id:
             if not image_url: return None
