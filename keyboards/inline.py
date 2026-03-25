@@ -6,7 +6,7 @@ def main_menu() -> InlineKeyboardMarkup:
     """Главное меню бота (ОРИГИНАЛЬНОЕ)."""
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🍌 Nano Banana", callback_data="cat:gen_nano_banana"),
+            InlineKeyboardButton(text="🍌 Nano Banana", callback_data="cat:gen_nano_banana", style="primary"),
             InlineKeyboardButton(text="🤖 Текст", callback_data="cat:gen_text")
         ],
         [
@@ -18,7 +18,7 @@ def main_menu() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
-            InlineKeyboardButton(text="💎 Подписка", callback_data="subscriptions")
+            InlineKeyboardButton(text="💎 Подписка", callback_data="subscriptions", style="success")
         ],
         [
             InlineKeyboardButton(text="📊 История", callback_data="history"),
@@ -39,13 +39,16 @@ def back_to_menu_kb() -> InlineKeyboardMarkup:
 def post_generation_kb() -> InlineKeyboardMarkup:
     """Клавиатура после генерации с кнопкой Заново."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 Заново", callback_data="restart_gen"), InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu")]
+        [
+            InlineKeyboardButton(text="🔄 Заново", callback_data="restart_gen", style="primary"), 
+            InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu")
+        ]
     ])
 
 def cancel_generation_menu() -> InlineKeyboardMarkup:
     """Клавиатура для отмены текущего процесса генерации."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отменить", callback_data="back_to_menu")]
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="back_to_menu", style="danger")]
     ])
 
 def model_families_menu(category: str) -> InlineKeyboardMarkup:
@@ -81,7 +84,6 @@ def model_families_menu(category: str) -> InlineKeyboardMarkup:
     
     for fam_key, fam_data in families.items():
         title = family_titles.get(fam_key, fam_key.capitalize())
-        # Ошибка была здесь: было family_data вместо fam_data
         models_count = len(fam_data.get("models", []))
         if models_count > 0:
             row.append(InlineKeyboardButton(
@@ -143,7 +145,7 @@ def nano_banana_menu() -> InlineKeyboardMarkup:
 def profile_menu() -> InlineKeyboardMarkup:
     """Меню профиля."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💎 Пополнить баланс", callback_data="subscriptions")],
+        [InlineKeyboardButton(text="💎 Пополнить баланс", callback_data="subscriptions", style="success")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
     ])
 
@@ -155,10 +157,11 @@ def subscription_tiers_menu() -> InlineKeyboardMarkup:
             continue
         keyboard.append([InlineKeyboardButton(
             text=f"{tier_data['name']} - {tier_data['price']}₽",
-            callback_data=f"tier_{tier_id}"
+            callback_data=f"tier_{tier_id}",
+            style="success"
         )])
     
-    keyboard.append([InlineKeyboardButton(text="🪙 Пакеты токенов", callback_data="packet_tokens")])
+    keyboard.append([InlineKeyboardButton(text="🪙 Пакеты токенов", callback_data="packet_tokens", style="primary")])
     keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -168,7 +171,8 @@ def token_package_menu() -> InlineKeyboardMarkup:
     for packet_id, packet_data in TOKEN_PACKAGES.items():
         keyboard.append([InlineKeyboardButton(
             text=f"{packet_data['name']} - {packet_data['price']}₽",
-            callback_data=f"buy_packet:{packet_id}"
+            callback_data=f"buy_packet:{packet_id}",
+            style="success"
         )])
     keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="subscriptions")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

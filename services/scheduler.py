@@ -12,14 +12,16 @@ async def reset_free_tokens():
         async with async_session_maker() as session:
             free_limit = SUBSCRIPTION_TIERS["FREE"]["tokens"]
             
-            # ИСПРАВЛЕНИЕ: Берем .value у Enum, чтобы база корректно нашла FREE пользователей
+            # ИСПРАВЛЕНИЕ: Добавлено условие tokens_balance < free_limit
+            # Теперь купленные или выданные админом токены не сгорают!
             result = await session.execute(
                 update(User)
                 .where(User.subscription_tier == SubscriptionTier.FREE.value)
+                .where(User.tokens_balance < free_limit)
                 .values(tokens_balance=free_limit)
             )
             await session.commit()
-            logger.info(f"✅ Ежедневный сброс токенов выполнен. Всем FREE пользователям начислено {free_limit} токенов.")
+            logger.info(f"✅ Ежедневный сброс токенов выполнен. Обновлено пользователей: {result.rowcount}.")
     except Exception as e:
         logger.error(f"❌ Ошибка при сбросе токенов: {e}")
 
@@ -48,7 +50,7 @@ async def subscription_expiration_task():
                 # Ищем пользователей с истекшей подпиской
                 result = await session.execute(
                     select(User).where(
-                        (User.subscription_expires_at <= now) & 
+                        (User.subscription_expires_at <= now) &
                         (User.subscription_tier != SubscriptionTier.FREE.value)
                     )
                 )
@@ -58,13 +60,14 @@ async def subscription_expiration_task():
                     logger.info(f"🔻 Подписка истекла у пользователя {user.telegram_id}")
                     user.subscription_tier = SubscriptionTier.FREE.value
                     user.is_premium = False
-                    # Сбрасываем токены до базового тарифа FREE
-                    user.tokens_balance = SUBSCRIPTION_TIERS["FREE"]["tokens"]
+                    # Сбрасываем токены до базового тарифа FREE только если их меньше
+                    if user.tokens_balance < SUBSCRIPTION_TIERS["FREE"]["tokens"]:
+                        user.tokens_balance = SUBSCRIPTION_TIERS["FREE"]["tokens"]
                 
                 if expired_users:
                     await session.commit()
         except Exception as e:
             logger.error(f"❌ Ошибка в проверке подписок: {e}")
-            
+        
         # Проверяем раз в час
         await asyncio.sleep(3600)
