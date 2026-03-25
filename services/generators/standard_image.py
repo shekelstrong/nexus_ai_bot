@@ -37,29 +37,25 @@ class StandardImageGenerator:
         if "gemini" in model.lower() or "google" in model.lower():
             req_modalities = ["image", "text"]
 
+        # --- ЗАЩИТА ОТ ПУСТОГО ПРОМПТА ---
+        # Если юзер прислал фото без подписи, даем базовую команду, чтобы OpenRouter не выдал ошибку 400
+        safe_prompt = prompt.strip() if prompt and prompt.strip() else "Пожалуйста, используй эти изображения как референс и сгенерируй новое на их основе."
+
         # Формируем контент сообщения с учетом референсов
-        # OpenRouter поддерживает мультимодальные запросы с изображениями
         content_parts = []
         
         # Добавляем референсы (изображения)
         for img_url in reference_images[:3]:  # Максимум 3
-            if img_url.startswith("data:image"):
-                # Base64 изображение
-                content_parts.append({
-                    "type": "image_url",
-                    "image_url": {"url": img_url}
-                })
-            else:
-                # URL изображения
-                content_parts.append({
-                    "type": "image_url",
-                    "image_url": {"url": img_url}
-                })
+            # OpenRouter принимает и URL, и Base64 в одинаковом формате
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": img_url}
+            })
         
-        # Добавляем текстовый промпт
+        # Добавляем текстовый промпт (используем safe_prompt вместо prompt)
         content_parts.append({
             "type": "text",
-            "text": prompt
+            "text": safe_prompt
         })
 
         payload = {
@@ -120,7 +116,7 @@ class StandardImageGenerator:
                             logger.warning(f"Image gen: Response contains error message: {content[:200]}")
                             return f"Ошибка генерации: {content[:200]}"
                         
-                        # Ищем URL картинки в формате Markdown: [text](url)
+                        # Ищем URL картинки в формате Markdown: ![text](url)
                         url_match = re.search(r'!\[.*?\]\((https?://[^\)]+)\)', content)
                         if url_match:
                             return url_match.group(1)
@@ -129,15 +125,13 @@ class StandardImageGenerator:
                         url_match = re.search(r'\[.*?\]\((https?://[^\)]+)\)', content)
                         if url_match:
                             url = url_match.group(1)
-                            # Проверяем, что это не ссылка на сайт
                             if 'openrouter.ai' not in url and 'settings' not in url:
                                 return url
                         
-                        # Ищем простой URL (но не если это часть предложения)
-                        url_simple = re.search(r'(https?://[^\s\])>"]+)', content)
+                        # Ищем простой URL
+                        url_simple = re.search(r'(https?://[^\s\]>"]+)', content)
                         if url_simple:
                             url = url_simple.group(1)
-                            # Проверяем, что это не ссылка на сайт
                             if 'openrouter.ai' not in url and 'settings' not in url:
                                 return url
 
@@ -152,7 +146,7 @@ class StandardImageGenerator:
             logger.error(f"StandardImageGenerator Error: {e}")
             return f"System Error: {str(e)}"
 
-    def _process_url(self, url: str) -> Union[str, BufferedInputFile]:
+    def _process_url(self, url: str) -> Union[str, BufferedInputFile, None]:
         """Обрабатывает URL или Base64 строку"""
         if not url:
             return None

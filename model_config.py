@@ -120,7 +120,7 @@ MODEL_CATALOG = {
             "models": [
                 {"id": "google/gemini-3-pro-image-preview", "name": "Nano Banana Pro", "cost": 8},
                 {"id": "google/gemini-2.5-flash-image", "name": "Nano Banana", "cost": 3},
-                {"id": "google/gemini-2.5-flash-image-preview", "name": "Nano Banana Preview", "cost": 3},
+                {"id": "google/gemini-3.1-flash-image-preview", "name": "Nano Banana 2", "cost": 3},
             ]
         },
     },

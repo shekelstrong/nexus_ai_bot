@@ -18,23 +18,23 @@ class VeoGenerator:
         Генерация для Google Veo 3.1
         """
         payload = {"prompt": prompt}
-        
+
         # Режимы
         if "first-last" in model_id:
-            # Требует image_url (start) и end_image_url (end)
+            # Требует first_frame_url (start) и last_frame_url (end)
             if not image_url: return None
-            payload["image_url"] = image_url
+            payload["first_frame_url"] = image_url
             
-            end_url = extra_params.get("second_image_url")
+            end_url = extra_params.get("second_image_url") if extra_params else None
             if not end_url:
                 logger.warning("Veo First-Last: No second image")
                 return None
-            payload["end_image_url"] = end_url # В некоторых версиях FAL это 'tail_image_url' или массив. Проверим доку: для veo3.1/fast/first-last это 'end_image_url'.
-            
-        elif "image-to-video" in model_id:
+            payload["last_frame_url"] = end_url
+
+        elif "image-to-video" in model_id or "reference-to-video" in model_id:
             if not image_url: return None
             payload["image_url"] = image_url
-            
+
         else:
             # Text to Video
             payload["aspect_ratio"] = "16:9"
