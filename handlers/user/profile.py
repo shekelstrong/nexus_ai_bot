@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from database.models import User, SubscriptionTier
-from keyboards.inline import profile_menu
+from keyboards.inline import profile_menu, back_to_menu_kb
 from config import TEXTS, SUBSCRIPTION_TIERS
 
 router = Router(name="profile_router")
@@ -74,3 +74,23 @@ async def show_profile_cb(cb: CallbackQuery, session: AsyncSession):
 async def cmd_account(message: Message, session: AsyncSession):
     """Обработчик команды /account из меню"""
     await _send_profile_msg(message.bot, message.chat.id, message.from_user.id, session)
+
+# --- НОВЫЙ ОБРАБОТЧИК ДЛЯ КНОПКИ "ИСТОРИЯ" ---
+@router.callback_query(F.data == "history")
+async def show_history_cb(cb: CallbackQuery):
+    """Обработчик для inline-кнопки История"""
+    text = (
+        "📊 <b>История генераций</b>\n\n"
+        "🚧 <i>Этот раздел находится в активной разработке.</i>\n\n"
+        "Скоро здесь появится список всех ваших последних запросов и сгенерированных материалов!"
+    )
+    try:
+        if cb.message.photo or cb.message.video or cb.message.document:
+            await cb.message.delete()
+            await cb.message.answer(text, parse_mode="HTML", reply_markup=back_to_menu_kb())
+        else:
+            await cb.message.edit_text(text, parse_mode="HTML", reply_markup=back_to_menu_kb())
+    except Exception:
+        await cb.message.answer(text, parse_mode="HTML", reply_markup=back_to_menu_kb())
+    
+    await cb.answer()

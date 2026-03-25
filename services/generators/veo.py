@@ -7,7 +7,7 @@ from utils.logger import logger
 class VeoGenerator:
     def __init__(self):
         self.api_key = settings.FAL_AI_API_KEY
-        self.base_url = "https://queue.fal.run"  # ИСПРАВЛЕНО: используем очередь для поллинга
+        self.base_url = "https://queue.fal.run"
         self.headers = {
             "Authorization": f"Key {self.api_key}",
             "Content-Type": "application/json"
@@ -17,7 +17,9 @@ class VeoGenerator:
         """
         Генерация для Google Veo 3.1
         """
-        payload = {"prompt": prompt or "Masterpiece"} # Страховка от пустого промпта
+        # Veo требует описание движения. Если юзер скинул только фото, ставим дефолтное
+        safe_prompt = prompt if prompt and prompt.strip() else "Smoothly and naturally animate the transition between the first and last frame, keeping high realism."
+        payload = {"prompt": safe_prompt}
 
         # Режимы
         if "first-last" in model_id:
@@ -45,14 +47,14 @@ class VeoGenerator:
         try:
             timeout = aiohttp.ClientTimeout(total=600, sock_connect=120, sock_read=300)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                url = f"{self.base_url}/{model_id}"
-                async with session.post(url, headers=self.headers, json=payload) as resp:
+                submit_url = f"{self.base_url}/{model_id}"
+                async with session.post(submit_url, headers=self.headers, json=payload) as resp:
                     if resp.status not in [200, 201]:
                         logger.error(f"Veo Error {resp.status}: {await resp.text()}")
                         return None
                     data = await resp.json()
                     
-                # На случай, если API решит ответить синхронно
+                # На случай быстрого ответа
                 if "video" in data:
                     return data["video"].get("url")
                 if "video_url" in data:
@@ -63,18 +65,28 @@ class VeoGenerator:
                     logger.error(f"Veo no request_id. Data: {data}")
                     return None
                 
-                status_url = f"{self.base_url}/{model_id}/requests/{request_id}"
-                for _ in range(120): # Ожидание до 10 минут (120 итераций по 5 сек)
+                # ВАЖНО: Используем правильный endpoint для поллинга статуса
+                status_url = data.get("status_url") or f"{self.base_url}/{model_id}/requests/{request_id}/status"
+                
+                for _ in range(120): # Ожидание до 10 минут
                     await asyncio.sleep(5)
-                    async with session.get(status_url, headers=self.headers) as resp:
-                        if resp.status != 200: continue
-                        data = await resp.json()
-                        if data.get("status") == "COMPLETED":
-                            res = data.get("response", data)
-                            return res.get("video", {}).get("url") or res.get("video_url")
-                        if data.get("status") == "FAILED":
-                            logger.error(f"Veo Task Failed: {data.get('error')}")
-                            return None
+                    try:
+                        async with session.get(status_url, headers=self.headers) as resp:
+                            if resp.status != 200: continue
+                            data = await resp.json()
+                            status = data.get("status")
+                            
+                            if status == "COMPLETED":
+                                res = data.get("response", data)
+                                return res.get("video", {}).get("url") or res.get("video_url")
+                            elif status == "FAILED":
+                                logger.error(f"Veo Task Failed: {data.get('error')}")
+                                return None
+                    except Exception as poll_e:
+                        # Игнорируем временные сбои сети при поллинге
+                        logger.warning(f"Veo Poll exception (ignoring): {poll_e}")
+                        continue
+                        
         except Exception as e:
             logger.error(f"Veo Exception: {e}")
             return None

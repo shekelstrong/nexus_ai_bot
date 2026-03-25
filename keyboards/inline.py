@@ -7,14 +7,14 @@ def main_menu() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🍌 Nano Banana", callback_data="cat:gen_nano_banana", style="primary"),
-            InlineKeyboardButton(text="🤖 Текст", callback_data="cat:gen_text")
+            InlineKeyboardButton(text="🤖 Текст", callback_data="cat:gen_text", style="primary")
         ],
         [
-            InlineKeyboardButton(text="🌐 Perplexity", callback_data="cat:gen_search"),
-            InlineKeyboardButton(text="🎨 Изображения", callback_data="cat:gen_image")
+            InlineKeyboardButton(text="🌐 Perplexity", callback_data="cat:gen_search", style="primary"),
+            InlineKeyboardButton(text="🎨 Изображения", callback_data="cat:gen_image", style="primary")
         ],
         [
-            InlineKeyboardButton(text="🎬 Видео", callback_data="cat:gen_video")
+            InlineKeyboardButton(text="🎬 Видео", callback_data="cat:gen_video", style="primary")
         ],
         [
             InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
@@ -22,7 +22,7 @@ def main_menu() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="📊 История", callback_data="history"),
-            InlineKeyboardButton(text="🎁 Рефералка", callback_data="referrals")
+            InlineKeyboardButton(text="🎁 Рефералка", callback_data="referrals", style="success")
         ],
         [
             InlineKeyboardButton(text="👨‍💻 Поддержка", callback_data="support")
@@ -88,7 +88,8 @@ def model_families_menu(category: str) -> InlineKeyboardMarkup:
         if models_count > 0:
             row.append(InlineKeyboardButton(
                 text=f"{title} ({models_count})",
-                callback_data=f"family:{category}:{fam_key}"
+                callback_data=f"family:{category}:{fam_key}",
+                style="primary"
             ))
             if len(row) == 2:
                 buttons.append(row)
@@ -110,7 +111,8 @@ def models_list_menu(category: str, family: str) -> InlineKeyboardMarkup:
         cost_text = f"💎 {model.get('cost', 0)}" if model.get('cost', 0) > 0 else "Беспл."
         row.append(InlineKeyboardButton(
             text=f"{model['name']} [{cost_text}]",
-            callback_data=f"set_model:{model['id']}"
+            callback_data=f"set_model:{model['id']}",
+            style="primary"
         ))
         if len(row) == 2:
             buttons.append(row)
@@ -136,7 +138,8 @@ def nano_banana_menu() -> InlineKeyboardMarkup:
             
         buttons.append([InlineKeyboardButton(
             text=text,
-            callback_data=f"set_model:{model['id']}"
+            callback_data=f"set_model:{model['id']}",
+            style="primary"
         )])
         
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")])

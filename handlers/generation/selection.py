@@ -86,7 +86,6 @@ async def _send_menu(callback: CallbackQuery, text: str, kb: InlineKeyboardMarku
         )
     else:
         if callback.message.photo or callback.message.video or callback.message.document:
-            # Убираем кнопки у старого сообщения с картинкой, но САМУ КАРТИНКУ ОСТАВЛЯЕМ
             try:
                 await callback.message.edit_reply_markup(reply_markup=None)
             except:
@@ -192,9 +191,9 @@ async def show_styles_page(callback: CallbackQuery, state: FSMContext, page: int
 
     kb_rows = []
     for i in range(0, len(page_styles), 2):
-        row = [InlineKeyboardButton(text=page_styles[i], callback_data=f"style_{page_styles[i]}")]
+        row = [InlineKeyboardButton(text=page_styles[i], callback_data=f"style_{page_styles[i]}", style="primary")]
         if i+1 < len(page_styles):
-            row.append(InlineKeyboardButton(text=page_styles[i+1], callback_data=f"style_{page_styles[i+1]}"))
+            row.append(InlineKeyboardButton(text=page_styles[i+1], callback_data=f"style_{page_styles[i+1]}", style="primary"))
         kb_rows.append(row)
 
     nav_row = []
@@ -258,26 +257,24 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
         pass
     
     if category in ["gen_image", "gen_nano_banana"]:
-        # Обычная Nano Banana не поддерживает форматы — пропускаем их
         if model_id == "google/gemini-2.5-flash-image":
             await state.update_data(ratio="1:1", size_prompt="")
             await show_styles_page(callback, state, 0, skipped_size=True, is_new_msg=True)
             await callback.answer()
             return
 
-        # GPT Images поддерживает только 1:1, 2:3, 3:2
         if family == "gemini_image":
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="1:1", callback_data="size_1:1")],
-                [InlineKeyboardButton(text="2:3", callback_data="size_2:3"), InlineKeyboardButton(text="3:2", callback_data="size_3:2")],
+                [InlineKeyboardButton(text="1:1", callback_data="size_1:1", style="primary")],
+                [InlineKeyboardButton(text="2:3", callback_data="size_2:3", style="primary"), InlineKeyboardButton(text="3:2", callback_data="size_3:2", style="primary")],
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
             ])
         else:
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="1:1", callback_data="size_1:1"), InlineKeyboardButton(text="16:9", callback_data="size_16:9")],
-                [InlineKeyboardButton(text="9:16", callback_data="size_9:16"), InlineKeyboardButton(text="4:3", callback_data="size_4:3")],
-                [InlineKeyboardButton(text="3:4", callback_data="size_3:4"), InlineKeyboardButton(text="21:9", callback_data="size_21:9")],
-                [InlineKeyboardButton(text="2:3", callback_data="size_2:3"), InlineKeyboardButton(text="3:2", callback_data="size_3:2")],
+                [InlineKeyboardButton(text="1:1", callback_data="size_1:1", style="primary"), InlineKeyboardButton(text="16:9", callback_data="size_16:9", style="primary")],
+                [InlineKeyboardButton(text="9:16", callback_data="size_9:16", style="primary"), InlineKeyboardButton(text="4:3", callback_data="size_4:3", style="primary")],
+                [InlineKeyboardButton(text="3:4", callback_data="size_3:4", style="primary"), InlineKeyboardButton(text="21:9", callback_data="size_21:9", style="primary")],
+                [InlineKeyboardButton(text="2:3", callback_data="size_2:3", style="primary"), InlineKeyboardButton(text="3:2", callback_data="size_3:2", style="primary")],
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
             ])
         
