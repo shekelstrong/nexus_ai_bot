@@ -13,6 +13,7 @@ from utils.logger import logger
 
 router = Router(name="selection_router")
 
+# Извлекаем описания моделей из нового конфига
 MODEL_INFO = {}
 for category, families in MODEL_CATALOG.items():
     for family_key, family_data in families.items():
@@ -20,7 +21,8 @@ for category, families in MODEL_CATALOG.items():
             MODEL_INFO[model["id"]] = {
                 "name": model["name"],
                 "category": category,
-                "family": family_key
+                "family": family_key,
+                "description": model.get("description", "")
             }
 
 SIZE_PROMPTS = {
@@ -211,11 +213,15 @@ async def show_styles_page(callback: CallbackQuery, state: FSMContext, page: int
 
     data = await state.get_data()
     ratio = data.get("ratio", "1:1")
+    name = data.get("current_model_name", "Модель")
+    desc = data.get("current_model_desc", "")
+    
+    desc_text = f"\nℹ️ <i>{desc}</i>\n" if desc else ""
 
     if skipped_size:
-        text = f"✅ <b>Модель установлена!</b>\n\nТеперь выберите <b>художественный стиль</b>:"
+        text = f"✅ Выбрана: <b>{name}</b>{desc_text}\nТеперь выберите <b>художественный стиль</b>:"
     else:
-        text = f"✅ <b>Размер {ratio} установлен!</b>\n\nТеперь выберите <b>художественный стиль</b>:"
+        text = f"✅ Размер <b>{ratio}</b> установлен!{desc_text}\nТеперь выберите <b>художественный стиль</b>:"
 
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
@@ -245,8 +251,12 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
     name = info.get("name", "Модель")
     category = info.get("category", "gen_text")
     family = info.get("family", "")
+    description = info.get("description", "")
     
     await state.clear()
+    
+    # Сохраняем данные модели, чтобы показать их на следующем шаге (выборе стиля)
+    await state.update_data(current_model_name=name, current_model_desc=description)
     
     try:
         if callback.message.photo or callback.message.video or callback.message.document:
@@ -255,6 +265,8 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
             await callback.message.delete()
     except:
         pass
+        
+    desc_text = f"\nℹ️ <i>{description}</i>\n" if description else ""
     
     if category in ["gen_image", "gen_nano_banana"]:
         if model_id == "google/gemini-2.5-flash-image":
@@ -278,12 +290,12 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
             ])
         
-        text = f"✅ <b>Модель установлена!</b>\nВыбрана: <b>{name}</b>\n\nТеперь выберите соотношение сторон (размер):"
+        text = f"✅ Выбрана: <b>{name}</b>{desc_text}\nТеперь выберите соотношение сторон (размер):"
         await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
         await callback.answer()
         return
 
-    text = f"✅ <b>Модель установлена!</b>\nВыбрана: <b>{name}</b>\n\n"
+    text = f"✅ Выбрана: <b>{name}</b>{desc_text}\n"
     
     if category == "gen_text":
         text += "Теперь просто напишите ваш <b>запрос (промпт)</b>."
