@@ -1,5 +1,7 @@
 import aiohttp
 import asyncio
+import json
+import re
 from typing import Optional, Dict
 from config import settings
 from utils.logger import logger
@@ -17,13 +19,10 @@ class VeoGenerator:
         """
         Генерация для Google Veo 3.1
         """
-        # Veo требует описание движения. Если юзер скинул только фото, ставим дефолтное
         safe_prompt = prompt if prompt and prompt.strip() else "Smoothly and naturally animate the transition between the first and last frame, keeping high realism."
         payload = {"prompt": safe_prompt}
 
-        # Режимы
         if "first-last" in model_id:
-            # ВОЗВРАЩАЕМ ПРАВИЛЬНЫЕ КЛЮЧИ ПО ОФИЦИАЛЬНОЙ ДОКУМЕНТАЦИИ
             if not image_url: return None
             payload["first_frame_url"] = image_url
             
@@ -38,7 +37,6 @@ class VeoGenerator:
             payload["image_url"] = image_url
 
         else:
-            # Text to Video
             payload["aspect_ratio"] = "16:9"
 
         return await self._submit_and_poll(model_id, payload)
@@ -57,7 +55,6 @@ class VeoGenerator:
                         return None
                     data = await resp.json()
                     
-                # На случай быстрого ответа
                 if "video" in data:
                     return data["video"].get("url")
                 if "video_url" in data:
@@ -68,11 +65,10 @@ class VeoGenerator:
                     logger.error(f"Veo no request_id. Data: {data}")
                     return None
                 
-                # ВАЖНО: Используем правильный endpoint для поллинга статуса
                 status_url = data.get("status_url") or f"{self.base_url}/{model_id}/requests/{request_id}/status"
                 logger.info(f"Veo Polling status at {status_url}")
                 
-                for _ in range(120): # Ожидание до 10 минут
+                for _ in range(120):
                     await asyncio.sleep(5)
                     try:
                         async with session.get(status_url, headers=self.headers) as resp:
@@ -83,14 +79,53 @@ class VeoGenerator:
                             status = data.get("status")
                             
                             if status == "COMPLETED":
-                                res = data.get("response", data)
                                 logger.info("Veo generation COMPLETED!")
-                                return res.get("video", {}).get("url") or res.get("video_url")
+                                
+                                # Ищем URL в текущем ответе
+                                res = data.get("response", data.get("payload", data))
+                                url = None
+                                
+                                if isinstance(res, dict):
+                                    vid = res.get("video")
+                                    if isinstance(vid, dict):
+                                        url = vid.get("url")
+                                    elif isinstance(vid, str):
+                                        url = vid
+                                    elif "video_url" in res:
+                                        url = res["video_url"]
+                                        
+                                # Если URL нет, но есть response_url (особенность FAL)
+                                if not url and "response_url" in data:
+                                    logger.info(f"Fetching final result from {data['response_url']}")
+                                    async with session.get(data["response_url"], headers=self.headers) as res_resp:
+                                        if res_resp.status == 200:
+                                            final_data = await res_resp.json()
+                                            vid_f = final_data.get("video")
+                                            if isinstance(vid_f, dict):
+                                                url = vid_f.get("url")
+                                            elif isinstance(vid_f, str):
+                                                url = vid_f
+                                            else:
+                                                # Жесткий fallback через регулярку
+                                                match = re.search(r'(https?://[^\s"]+\.mp4)', json.dumps(final_data))
+                                                if match: url = match.group(1)
+                                                
+                                # Тотальный fallback, если ничего не помогло
+                                if not url:
+                                    match = re.search(r'(https?://[^\s"]+\.mp4)', json.dumps(data))
+                                    if match: url = match.group(1)
+
+                                if url:
+                                    logger.info(f"Veo Extracted URL: {url}")
+                                else:
+                                    logger.error(f"Veo could not find video URL in data: {data}")
+                                
+                                return url
+
                             elif status == "FAILED":
                                 logger.error(f"Veo Task Failed: {data.get('error')}")
                                 return None
                     except Exception as poll_e:
-                        # Игнорируем временные сбои сети при поллинге
                         logger.warning(f"Veo Poll exception (ignoring): {poll_e}")
                         continue
                         

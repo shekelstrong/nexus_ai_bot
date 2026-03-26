@@ -89,7 +89,6 @@ async def step_reference_video(message: Message, state: FSMContext, session: Asy
     video = message.video
     logger.info(f"step_reference_video: получено видео, file_id={video.file_id}, размер {video.file_size / (1024*1024):.2f} MB")
     
-    # Telegram Bot API (без локального сервера) разрешает скачивать файлы только до 20 МБ
     if video.file_size > 20*1024*1024:
         await message.answer("❌ Видео слишком большое! Telegram разрешает ботам скачивать файлы только до 20 MB. Пожалуйста, сожмите видео перед отправкой.")
         return
@@ -376,12 +375,12 @@ async def run_complex_generation(
         if not res_url:
             raise Exception("Не удалось извлечь URL результата")
 
-        # СОХРАНЯЕМ РЕЗУЛЬТАТ В БД И ПОЛУЧАЕМ ID ДЛЯ КНОПКИ ПОДЕЛИТЬСЯ
+        # СОХРАНЯЕМ В БД С ТЕМПОВЫМ РЕЗУЛЬТАТОМ
         gen = Generation(
             user_id=user.id,
             model_name=model_id,
             prompt=prompt,
-            result=res_url,
+            result="processing",
             status=GenerationStatus.COMPLETED,
             cost=cost,
         )
@@ -391,11 +390,12 @@ async def run_complex_generation(
 
         tmp_path = await download_to_tempfile(res_url)
         sent_video_ok = False
+        sent_msg = None
 
         if tmp_path and os.path.exists(tmp_path):
             try:
                 input_file_video = FSInputFile(tmp_path, filename="video.mp4")
-                await message.answer_video(
+                sent_msg = await message.answer_video(
                     input_file_video,
                     caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
@@ -408,7 +408,7 @@ async def run_complex_generation(
 
         if not sent_video_ok:
             try:
-                await message.answer_video(
+                sent_msg = await message.answer_video(
                     res_url,
                     caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
@@ -417,6 +417,14 @@ async def run_complex_generation(
                 sent_video_ok = True
             except Exception as e:
                 logger.warning(f"Complex Gen: Ошибка отправки по URL: {e}")
+
+        # ОБНОВЛЯЕМ БД TELEGRAM FILE_ID
+        if sent_video_ok and sent_msg and sent_msg.video:
+            gen.result = sent_msg.video.file_id
+            await session.commit()
+        else:
+            gen.result = res_url
+            await session.commit()
 
         if tmp_path and os.path.exists(tmp_path) and sent_video_ok:
             try:
@@ -503,13 +511,12 @@ async def run_image_generation(
 
         await status_msg.delete()
 
-        # СОХРАНЯЕМ РЕЗУЛЬТАТ В БД И ПОЛУЧАЕМ ID ДЛЯ КНОПКИ ПОДЕЛИТЬСЯ
-        res_str_for_db = str(res) if not isinstance(res, BufferedInputFile) else "OK (Base64)"
+        # СОХРАНЯЕМ В БД С ТЕМПОВЫМ РЕЗУЛЬТАТОМ
         gen = Generation(
             user_id=user.id,
             model_name=model_id,
             prompt=prompt,
-            result=res_str_for_db,
+            result="processing",
             status=GenerationStatus.COMPLETED,
             cost=cost,
         )
@@ -517,9 +524,10 @@ async def run_image_generation(
         await session.commit()
         gen_id = gen.id
 
+        sent_msg = None
         try:
             if isinstance(res, BufferedInputFile):
-                await message.answer_photo(
+                sent_msg = await message.answer_photo(
                     res,
                     caption=f"🎨 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
@@ -527,16 +535,25 @@ async def run_image_generation(
                 )
             else:
                 image_url = normalize_url(str(res))
-                await message.answer_photo(
+                sent_msg = await message.answer_photo(
                     image_url,
                     caption=f"🎨 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
                     reply_markup=post_generation_kb(gen_id),
                 )
+                
+            # ОБНОВЛЯЕМ БД TELEGRAM FILE_ID
+            if sent_msg and sent_msg.photo:
+                gen.result = sent_msg.photo[-1].file_id
+                await session.commit()
+                
         except Exception as send_error:
             logger.error(f"Failed to send image: {send_error}")
             if not isinstance(res, BufferedInputFile):
                 image_url = normalize_url(str(res))
+                gen.result = image_url
+                await session.commit()
+                
                 await message.answer(
                     f"🎨 <b>{model_info['name']}</b>\n"
                     f"💎 -{cost} токенов\n\n"
@@ -598,16 +615,24 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             
             await status_msg.delete()
             
-            gen = Generation(user_id=user.id, model_name=model_info["id"], prompt=prompt, result=str(res), status=GenerationStatus.COMPLETED, cost=cost)
+            gen = Generation(user_id=user.id, model_name=model_info["id"], prompt=prompt, result="processing", status=GenerationStatus.COMPLETED, cost=cost)
             session.add(gen)
             await session.commit()
             
-            await message.answer_video(
+            sent_msg = await message.answer_video(
                 normalize_url(res),
                 caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                 parse_mode="HTML",
                 reply_markup=post_generation_kb(gen.id),
             )
+            
+            if sent_msg and sent_msg.video:
+                gen.result = sent_msg.video.file_id
+                await session.commit()
+            else:
+                gen.result = str(res)
+                await session.commit()
+                
         elif category == "gen_image":
             await run_image_generation(message, session, prompt, reference_images=[])
             return
