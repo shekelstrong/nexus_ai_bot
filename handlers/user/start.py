@@ -7,8 +7,8 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from database.models import User
-from keyboards.inline import main_menu, model_families_menu, nano_banana_menu
+from database.models import User, Generation
+from keyboards.inline import main_menu, model_families_menu, nano_banana_menu, confirm_try_prompt_kb
 from config import TEXTS, ADMIN_IDS
 from handlers.admin.notifications import notify_admin_new_user, notify_referrer_new_referral
 from handlers.generation.selection import CATEGORY_IMAGES
@@ -24,6 +24,8 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
     args = message.text.split()
     referrer_code = None
     start_param = None
+    is_shared_gen = False
+    shared_gen_id = None
 
     if len(args) > 1:
         start_param = args[1]
@@ -36,9 +38,15 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
         elif start_param == "pay_failed":
             await handle_pay_failed(message)
             return
-
-        # Если не оплата, проверяем на реферальный код
-        referrer_code = start_param
+        elif start_param.startswith("gen_"):
+            is_shared_gen = True
+            try:
+                shared_gen_id = int(start_param.replace("gen_", ""))
+            except ValueError:
+                shared_gen_id = None
+        else:
+            # Если не оплата и не генерация, проверяем на реферальный код
+            referrer_code = start_param
 
     # ЛОГИРОВАНИЕ ДЛЯ Отладки
     logger.info(f"🚀 /start от {message.from_user.id} (@{message.from_user.username}), реферер (code): {referrer_code}")
@@ -115,9 +123,33 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession):
             await session.rollback()
             logger.error(f"❌ Ошибка при сохранении пользователя: {e}")
 
-    # Текст приветствия из твоего конфига
-    text = TEXTS["ru"]["welcome"]
-    await message.answer(text, reply_markup=main_menu(), parse_mode="HTML")
+    # ЕСЛИ ПЕРЕШЛИ ПО ССЫЛКЕ ИЗ КАНАЛА ДЛЯ ЗАПУСКА ПРОМПТА
+    if is_shared_gen and shared_gen_id:
+        await handle_shared_generation(message, session, shared_gen_id)
+    else:
+        # Текст приветствия из твоего конфига
+        text = TEXTS["ru"]["welcome"]
+        await message.answer(text, reply_markup=main_menu(), parse_mode="HTML")
+
+
+async def handle_shared_generation(message: Message, session: AsyncSession, gen_id: int):
+    """Обработка перехода по Deep Link для запуска чужого промпта"""
+    res = await session.execute(select(Generation).where(Generation.id == gen_id))
+    gen = res.scalar_one_or_none()
+    
+    if not gen:
+        await message.answer("❌ Эта генерация не найдена. Возможно, она была удалена.")
+        await message.answer(TEXTS["ru"]["welcome"], reply_markup=main_menu(), parse_mode="HTML")
+        return
+        
+    text = (
+        f"🚀 <b>Запуск по ссылке</b>\n\n"
+        f"🤖 Модель: <b>{gen.model_name}</b>\n"
+        f"📝 Промпт:\n<code>{gen.prompt}</code>\n\n"
+        f"Хотите запустить генерацию с этими настройками?"
+    )
+    
+    await message.answer(text, parse_mode="HTML", reply_markup=confirm_try_prompt_kb(gen_id))
 
 
 async def handle_pay_success(message: Message, session: AsyncSession, order_id: str):

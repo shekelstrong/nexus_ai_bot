@@ -36,13 +36,36 @@ def back_to_menu_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu", style="success")]
     ])
 
-def post_generation_kb() -> InlineKeyboardMarkup:
-    """Клавиатура после генерации с кнопкой Заново."""
-    return InlineKeyboardMarkup(inline_keyboard=[
+def post_generation_kb(gen_id: int = None) -> InlineKeyboardMarkup:
+    """Клавиатура после генерации с кнопками Заново и Поделиться."""
+    buttons = [
         [
             InlineKeyboardButton(text="🔄 Заново", callback_data="restart_gen", style="primary"), 
             InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu", style="success")
         ]
+    ]
+    
+    # Если передан ID генерации, добавляем кнопку "Поделиться"
+    if gen_id:
+        buttons.insert(0, [
+            InlineKeyboardButton(text="📢 Поделиться в канал", callback_data=f"share_gen:{gen_id}", style="primary")
+        ])
+        
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def try_prompt_kb(gen_id: int) -> InlineKeyboardMarkup:
+    """Кнопка для канала 'Попробовать этот промпт' (Deep Link)"""
+    url = f"https://t.me/nexsai_bot?start=gen_{gen_id}"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Попробовать этот промпт", url=url)]
+    ])
+
+def confirm_try_prompt_kb(gen_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура Да/Нет(Изменить) для запуска чужого промпта"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Запустить генерацию", callback_data=f"run_gen:{gen_id}", style="success")],
+        [InlineKeyboardButton(text="✏️ Изменить настройки", callback_data=f"edit_gen:{gen_id}", style="primary")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="back_to_menu", style="danger")]
     ])
 
 def cancel_generation_menu() -> InlineKeyboardMarkup:

@@ -376,6 +376,19 @@ async def run_complex_generation(
         if not res_url:
             raise Exception("Не удалось извлечь URL результата")
 
+        # СОХРАНЯЕМ РЕЗУЛЬТАТ В БД И ПОЛУЧАЕМ ID ДЛЯ КНОПКИ ПОДЕЛИТЬСЯ
+        gen = Generation(
+            user_id=user.id,
+            model_name=model_id,
+            prompt=prompt,
+            result=res_url,
+            status=GenerationStatus.COMPLETED,
+            cost=cost,
+        )
+        session.add(gen)
+        await session.commit()
+        gen_id = gen.id
+
         tmp_path = await download_to_tempfile(res_url)
         sent_video_ok = False
 
@@ -386,7 +399,7 @@ async def run_complex_generation(
                     input_file_video,
                     caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
-                    reply_markup=post_generation_kb(),
+                    reply_markup=post_generation_kb(gen_id),
                     supports_streaming=True
                 )
                 sent_video_ok = True
@@ -399,7 +412,7 @@ async def run_complex_generation(
                     res_url,
                     caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
-                    reply_markup=post_generation_kb(),
+                    reply_markup=post_generation_kb(gen_id),
                 )
                 sent_video_ok = True
             except Exception as e:
@@ -424,25 +437,13 @@ async def run_complex_generation(
                 "⚠️ Не удалось загрузить видео в Telegram, вот прямая ссылка:\n"
                 f"<a href='{res_url}'>Скачать видео</a>",
                 parse_mode="HTML",
-                reply_markup=post_generation_kb(),
+                reply_markup=post_generation_kb(gen_id),
             )
 
         try:
             await status_msg.delete()
         except:
             pass
-
-        session.add(
-            Generation(
-                user_id=user.id,
-                model_name=model_id,
-                prompt=prompt,
-                result="OK",
-                status=GenerationStatus.COMPLETED,
-                cost=cost,
-            )
-        )
-        await session.commit()
 
     except Exception as e:
         logger.error(f"Complex Gen Error: {e}")
@@ -502,7 +503,19 @@ async def run_image_generation(
 
         await status_msg.delete()
 
-        from aiogram.types import BufferedInputFile
+        # СОХРАНЯЕМ РЕЗУЛЬТАТ В БД И ПОЛУЧАЕМ ID ДЛЯ КНОПКИ ПОДЕЛИТЬСЯ
+        res_str_for_db = str(res) if not isinstance(res, BufferedInputFile) else "OK (Base64)"
+        gen = Generation(
+            user_id=user.id,
+            model_name=model_id,
+            prompt=prompt,
+            result=res_str_for_db,
+            status=GenerationStatus.COMPLETED,
+            cost=cost,
+        )
+        session.add(gen)
+        await session.commit()
+        gen_id = gen.id
 
         try:
             if isinstance(res, BufferedInputFile):
@@ -510,7 +523,7 @@ async def run_image_generation(
                     res,
                     caption=f"🎨 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
-                    reply_markup=post_generation_kb(),
+                    reply_markup=post_generation_kb(gen_id),
                 )
             else:
                 image_url = normalize_url(str(res))
@@ -518,7 +531,7 @@ async def run_image_generation(
                     image_url,
                     caption=f"🎨 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
-                    reply_markup=post_generation_kb(),
+                    reply_markup=post_generation_kb(gen_id),
                 )
         except Exception as send_error:
             logger.error(f"Failed to send image: {send_error}")
@@ -530,7 +543,7 @@ async def run_image_generation(
                     "⚠️ Не удалось отправить изображение в Telegram.\n"
                     f"<a href='{image_url}'>Скачать изображение</a>",
                     parse_mode="HTML",
-                    reply_markup=post_generation_kb(),
+                    reply_markup=post_generation_kb(gen_id),
                 )
             else:
                 await message.answer(
@@ -540,18 +553,6 @@ async def run_image_generation(
                     parse_mode="HTML",
                     reply_markup=back_to_menu_kb(),
                 )
-
-        session.add(
-            Generation(
-                user_id=user.id,
-                model_name=model_id,
-                prompt=prompt,
-                result="OK",
-                status=GenerationStatus.COMPLETED,
-                cost=cost,
-            )
-        )
-        await session.commit()
 
     except Exception as e:
         logger.error(f"Image Gen Error: {e}")
@@ -596,11 +597,16 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
                 raise Exception("Ошибка видео")
             
             await status_msg.delete()
+            
+            gen = Generation(user_id=user.id, model_name=model_info["id"], prompt=prompt, result=str(res), status=GenerationStatus.COMPLETED, cost=cost)
+            session.add(gen)
+            await session.commit()
+            
             await message.answer_video(
                 normalize_url(res),
                 caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                 parse_mode="HTML",
-                reply_markup=post_generation_kb(),
+                reply_markup=post_generation_kb(gen.id),
             )
         elif category == "gen_image":
             await run_image_generation(message, session, prompt, reference_images=[])
@@ -617,35 +623,17 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             await status_msg.delete()
 
             if res and not res.startswith("Error:"):
-                session.add(
-                    Generation(
-                        user_id=user.id,
-                        model_name=model_info["id"],
-                        prompt=prompt,
-                        result="OK",
-                        status=GenerationStatus.COMPLETED,
-                        cost=cost,
-                    )
-                )
-                await message.answer(res[:4000], parse_mode="Markdown", reply_markup=post_generation_kb())
+                gen = Generation(user_id=user.id, model_name=model_info["id"], prompt=prompt, result="OK", status=GenerationStatus.COMPLETED, cost=cost)
+                session.add(gen)
+                await session.commit()
+                
+                await message.answer(res[:4000], parse_mode="Markdown", reply_markup=post_generation_kb(gen.id))
             else:
                 user.tokens_balance += cost
                 await session.commit()
                 error_msg = res if res else "Ошибка: не удалось получить ответ от модели"
                 await message.answer(f"❌ {error_msg}", reply_markup=back_to_menu_kb())
                 return
-
-        session.add(
-            Generation(
-                user_id=user.id,
-                model_name=model_info["id"],
-                prompt=prompt,
-                result="OK",
-                status=GenerationStatus.COMPLETED,
-                cost=cost,
-            )
-        )
-        await session.commit()
 
     except Exception as e:
         logger.error(f"Simple Gen Error: {e}")
@@ -666,7 +654,6 @@ async def _get_file_url_or_base64(bot, file_id, is_video=False):
         safe_url = telegram_url.replace(bot.token, "***")
         logger.info(f"Video URL: {safe_url}. Downloading and uploading to FAL Storage...")
         
-        # ЗАГРУЖАЕМ ВИДЕО В FAL AI НАПРЯМУЮ, ЧТОБЫ ИЗБЕЖАТЬ БЛОКИРОВОК TELEGRAM URL
         try:
             file_bytes_io = await bot.download_file(file.file_path)
             file_bytes = file_bytes_io.read()
