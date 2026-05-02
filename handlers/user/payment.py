@@ -126,7 +126,7 @@ async def buy_packet_handler(cb: CallbackQuery, session: AsyncSession):
 
     amount = packet["price_rub"]
     
-    order_id = f"tokens_{packet_id}_{cb.from_user.id}"
+    order_id = f"{packet_id}_{cb.from_user.id}"
     invoice_url = await create_invoice(
         amount_rub=amount,
         order_id=order_id,

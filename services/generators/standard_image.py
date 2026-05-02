@@ -30,6 +30,10 @@ class StandardImageGenerator:
         if reference_images is None:
             reference_images = []
 
+        # GPT Image 2 (dall-e-3 compatible) — native OpenAI API
+        if "gpt-image-2" in model.lower():
+            return await self._generate_gpt_image_2(prompt, reference_images)
+
         # --- ОПРЕДЕЛЯЕМ НУЖНЫЕ MODALITIES ---
         req_modalities = ["image"]
 
@@ -145,6 +149,61 @@ class StandardImageGenerator:
         except Exception as e:
             logger.error(f"StandardImageGenerator Error: {e}")
             return f"System Error: {str(e)}"
+
+    async def _generate_gpt_image_2(
+        self,
+        prompt: str,
+        reference_images: Optional[List[str]] = None
+    ) -> Optional[Union[str, BufferedInputFile]]:
+        """Generate image via OpenAI Images API (gpt-image-1 / dall-e-3)."""
+        from config import settings as cfg
+        url = "https://api.openai.com/v1/images/generations"
+        headers = {
+            "Authorization": f"Bearer {cfg.OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        # gpt-image-2 идёт через OpenRouter как обычная модель генерации изображений
+        safe_prompt = (prompt or "").strip() or "A beautiful creative image"
+        payload = {
+            "model": "openai/gpt-image-1",
+            "prompt": safe_prompt,
+            "n": 1,
+            "size": "1024x1024",
+        }
+        # Если есть референс, переходим на chat-based fallback (референсы в DALL-E 3 не поддерживаются нативно)
+        if reference_images:
+            logger.info("GPT Image 2: references present, falling back to chat completions")
+            return await self.generate("openai/gpt-5-image-mini", prompt, reference_images)
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=120, sock_connect=30)
+            # Для OpenRouter — используем через chat completions
+            chat_url = "https://openrouter.ai/api/v1/chat/completions"
+            chat_payload = {
+                "model": "openai/gpt-image-1",
+                "messages": [{"role": "user", "content": safe_prompt}],
+                "modalities": ["image"]
+            }
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(chat_url, headers=self.headers, json=chat_payload) as resp:
+                    if resp.status != 200:
+                        err = await resp.text()
+                        logger.error(f"GPT Image 2 Error {resp.status}: {err}")
+                        return f"Error {resp.status}"
+                    data = await resp.json()
+                    msg = data.get("choices", [{}])[0].get("message", {})
+                    images = msg.get("images", [])
+                    if images:
+                        return self._process_url(images[0] if isinstance(images[0], str) else images[0].get("image_url", {}).get("url"))
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        for part in content:
+                            if isinstance(part, dict) and part.get("type") == "image_url":
+                                return self._process_url(part["image_url"].get("url"))
+                    return None
+        except Exception as e:
+            logger.error(f"GPT Image 2 Exception: {e}")
+            return None
 
     def _process_url(self, url: str) -> Union[str, BufferedInputFile, None]:
         """Обрабатывает URL или Base64 строку"""
