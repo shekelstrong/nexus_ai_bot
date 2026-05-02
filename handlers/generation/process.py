@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import aiohttp
+import html
 import os
 import re
 import tempfile
@@ -17,6 +18,12 @@ from utils.logger import logger
 from model_config import MODEL_CATALOG
 from states.generation_states import GenState
 from services.fal_ai import upload_file_to_fal
+
+
+def _safe_html(text: str, max_len: int = 3900) -> str:
+    """Экранирует текст для Telegram HTML, обрезает по длине."""
+    t = (text or "")[:max_len]
+    return html.escape(t)
 
 router = Router(name="process_router")
 
@@ -724,7 +731,7 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
                 session.add(gen)
                 await session.commit()
                 
-                await message.answer(res[:4000], parse_mode="Markdown", reply_markup=post_generation_kb(gen.id))
+                await message.answer(f"<pre>{_safe_html(res)}</pre>", parse_mode="HTML", reply_markup=post_generation_kb(gen.id, model_id=model_info["id"]))
             else:
                 user.tokens_balance += cost
                 await session.commit()

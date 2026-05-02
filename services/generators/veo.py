@@ -42,6 +42,45 @@ class VeoGenerator:
 
         return await self._submit_and_poll(model_id, payload)
 
+    @staticmethod
+    def _extract_video_url(data: Dict) -> Optional[str]:
+        """Извлекает URL видео из любого формата ответа FAL."""
+        if not isinstance(data, dict):
+            return None
+
+        # 1. video: { url: ... }
+        vid = data.get("video")
+        if isinstance(vid, dict):
+            url = vid.get("url")
+            if url:
+                return url
+        elif isinstance(vid, str):
+            return vid
+
+        # 2. video_url
+        if "video_url" in data and isinstance(data["video_url"], str):
+            return data["video_url"]
+
+        # 3. images: [{ url: ... }]
+        images = data.get("images")
+        if isinstance(images, list) and images:
+            img = images[0]
+            if isinstance(img, dict):
+                return img.get("url")
+            elif isinstance(img, str):
+                return img
+
+        # 4. file: { url: ... }  (некоторые FAL модели)
+        f = data.get("file")
+        if isinstance(f, dict):
+            return f.get("url")
+
+        # 5. url
+        if "url" in data and isinstance(data["url"], str):
+            return data["url"]
+
+        return None
+
     async def _submit_and_poll(self, model_id: str, payload: Dict) -> Optional[str]:
         try:
             timeout = aiohttp.ClientTimeout(total=600, sock_connect=120, sock_read=300)
@@ -81,50 +120,43 @@ class VeoGenerator:
                             
                             if status == "COMPLETED":
                                 logger.info("Veo generation COMPLETED!")
+                                url = self._extract_video_url(data)
                                 
-                                # Ищем URL в текущем ответе
-                                res = data.get("response", data.get("payload", data))
-                                url = None
-                                
-                                if isinstance(res, dict):
-                                    vid = res.get("video")
-                                    if isinstance(vid, dict):
-                                        url = vid.get("url")
-                                    elif isinstance(vid, str):
-                                        url = vid
-                                    elif "video_url" in res:
-                                        url = res["video_url"]
-                                        
-                                # Если URL нет, но есть response_url (особенность FAL)
+                                # FAL Queue API: результат лежит по response_url, а не в status-ответе
                                 if not url and "response_url" in data:
                                     logger.info(f"Fetching final result from {data['response_url']}")
-                                    async with session.get(data["response_url"], headers=self.headers) as res_resp:
-                                        if res_resp.status == 200:
-                                            final_data = await res_resp.json()
-                                            vid_f = final_data.get("video")
-                                            if isinstance(vid_f, dict):
-                                                url = vid_f.get("url")
-                                            elif isinstance(vid_f, str):
-                                                url = vid_f
-                                            else:
-                                                # Жесткий fallback через регулярку
-                                                match = re.search(r'(https?://[^\s"]+\.mp4)', json.dumps(final_data))
-                                                if match: url = match.group(1)
+                                    try:
+                                        async with session.get(data["response_url"], headers=self.headers, 
+                                                timeout=aiohttp.ClientTimeout(total=120)) as res_resp:
+                                            if res_resp.status == 200:
+                                                final_data = await res_resp.json()
+                                                logger.info(f"Veo response_url data keys: {list(final_data.keys()) if isinstance(final_data, dict) else 'not-dict'}")
+                                                url = self._extract_video_url(final_data)
                                                 
-                                # Тотальный fallback, если ничего не помогло
+                                                # Fallback: ищем MP4 в сырых данных
+                                                if not url:
+                                                    raw = json.dumps(final_data)
+                                                    match = re.search(r'(https?://[^\s"]+\.mp4[^\s"]*)', raw)
+                                                    if match: url = match.group(1)
+                                    except Exception as fetch_e:
+                                        logger.warning(f"Veo response_url fetch error: {fetch_e}")
+                                
+                                # Тотальный fallback — regex по всем данным
                                 if not url:
-                                    match = re.search(r'(https?://[^\s"]+\.mp4)', json.dumps(data))
+                                    raw = json.dumps(data)
+                                    match = re.search(r'(https?://[^\s"]+\.mp4[^\s"]*)', raw)
                                     if match: url = match.group(1)
 
                                 if url:
                                     logger.info(f"Veo Extracted URL: {url}")
                                 else:
-                                    logger.error(f"Veo could not find video URL in data: {data}")
+                                    logger.error(f"Veo could not find video URL. Full data: {json.dumps(data)[:500]}")
                                 
                                 return url
 
                             elif status == "FAILED":
-                                logger.error(f"Veo Task Failed: {data.get('error')}")
+                                err = data.get('error', data.get('detail', 'Unknown'))
+                                logger.error(f"Veo Task Failed: {err}")
                                 return None
                     except Exception as poll_e:
                         logger.warning(f"Veo Poll exception (ignoring): {poll_e}")
