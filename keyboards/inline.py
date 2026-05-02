@@ -3,18 +3,18 @@ from model_config import MODEL_CATALOG
 from config import SUBSCRIPTION_TIERS, TOKEN_PACKAGES
 
 def main_menu() -> InlineKeyboardMarkup:
-    """Главное меню бота (ОРИГИНАЛЬНОЕ)."""
+    """Главное меню бота."""
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🍌 Nano Banana", callback_data="cat:gen_nano_banana", style="primary"),
-            InlineKeyboardButton(text="🤖 Текст", callback_data="cat:gen_text", style="primary")
-        ],
-        [
-            InlineKeyboardButton(text="🌐 Perplexity", callback_data="cat:gen_search", style="primary"),
+            InlineKeyboardButton(text="🤖 Текст", callback_data="cat:gen_text", style="primary"),
             InlineKeyboardButton(text="🎨 Изображения", callback_data="cat:gen_image", style="primary")
         ],
         [
-            InlineKeyboardButton(text="🎬 Видео", callback_data="cat:gen_video", style="primary")
+            InlineKeyboardButton(text="🍌 Nano Banana", callback_data="cat:gen_nano_banana", style="primary"),
+            InlineKeyboardButton(text="🎥 Видео", callback_data="cat:gen_video", style="primary")
+        ],
+        [
+            InlineKeyboardButton(text="✏️ Промпт", callback_data="cat:gen_prompt", style="primary")
         ],
         [
             InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
@@ -36,21 +36,119 @@ def back_to_menu_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu", style="success")]
     ])
 
-def post_generation_kb(gen_id: int = None) -> InlineKeyboardMarkup:
-    """Клавиатура после генерации с кнопками Заново и Поделиться."""
+
+def video_category_menu() -> InlineKeyboardMarkup:
+    """Меню подразделов видео."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📸 Видео по фото", callback_data="family:gen_video:video_from_photo", style="primary")],
+        [InlineKeyboardButton(text="🎥 Видео по образцу", callback_data="family:gen_video:video_from_motion", style="primary")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
+    ])
+
+
+def text_models_menu() -> InlineKeyboardMarkup:
+    """Меню выбора текстовых моделей (бренды без семейств)."""
+    from model_config import MODEL_CATALOG
+    families = MODEL_CATALOG.get("gen_text", {})
+    brand_icons = {
+        "openai": "🧠 ChatGPT (OpenAI)",
+        "anthropic": "🟣 Claude (Anthropic)",
+        "google": "🔵 Gemini (Google)",
+        "deepseek": "🔥 DeepSeek",
+        "xai": "⚡️ Grok (xAI)",
+    }
+    buttons = []
+    for fam_key in families:
+        title = brand_icons.get(fam_key, fam_key.capitalize())
+        buttons.append([InlineKeyboardButton(
+            text=title,
+            callback_data=f"family:gen_text:{fam_key}",
+            style="primary"
+        )])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def prompt_menu() -> InlineKeyboardMarkup:
+    """Меню раздела Промпт."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🖼️ Промпт для фото", callback_data="prompt_for_image", style="primary")],
+        [InlineKeyboardButton(text="🎥 Промпт для видео", callback_data="prompt_for_video", style="primary")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
+    ])
+
+
+def video_prompt_duration_menu() -> InlineKeyboardMarkup:
+    """Выбор длительности промпта для видео."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="5 секунд", callback_data="vprompt_dur:5", style="primary"),
+            InlineKeyboardButton(text="10 секунд", callback_data="vprompt_dur:10", style="primary")
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="cat:gen_prompt", style="success")]
+    ])
+
+
+def video_format_menu() -> InlineKeyboardMarkup:
+    """Выбор формата видео."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="9:16 (вертикальное)", callback_data="vformat:9:16", style="primary"),
+            InlineKeyboardButton(text="16:9 (горизонтальное)", callback_data="vformat:16:9", style="primary")
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
+    ])
+
+
+def video_duration_menu() -> InlineKeyboardMarkup:
+    """Выбор длительности видео."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="5 секунд", callback_data="vduration:5", style="primary"),
+            InlineKeyboardButton(text="10 секунд", callback_data="vduration:10", style="primary")
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
+    ])
+
+
+def post_video_gen_kb(model_id: str, gen_id: int = None) -> InlineKeyboardMarkup:
+    """Клавиатура после видеогенерации: Снова + Меню."""
     buttons = [
         [
-            InlineKeyboardButton(text="🔄 Заново", callback_data="restart_gen", style="primary"), 
+            InlineKeyboardButton(text="🔄 Снова в этой модели", callback_data=f"regen_model:{model_id}", style="primary"),
+        ],
+        [
             InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu", style="success")
         ]
     ]
-    
-    # Если передан ID генерации, добавляем кнопку "Поделиться"
+    if gen_id:
+        buttons.insert(0, [
+            InlineKeyboardButton(text="📢 Поделиться", callback_data=f"share_gen:{gen_id}", style="primary")
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def post_generation_kb(gen_id: int = None, model_id: str = None) -> InlineKeyboardMarkup:
+    """Клавиатура после генерации."""
+    buttons = []
+
+    if model_id:
+        buttons.append([
+            InlineKeyboardButton(text="🔄 Снова в этой модели", callback_data=f"regen_model:{model_id}", style="primary")
+        ])
+    else:
+        buttons.append([
+            InlineKeyboardButton(text="🔄 Заново", callback_data="restart_gen", style="primary")
+        ])
+
+    buttons.append([
+        InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu", style="success")
+    ])
+
     if gen_id:
         buttons.insert(0, [
             InlineKeyboardButton(text="📢 Поделиться в канал", callback_data=f"share_gen:{gen_id}", style="primary")
         ])
-        
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def try_prompt_kb(gen_id: int) -> InlineKeyboardMarkup:

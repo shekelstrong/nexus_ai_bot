@@ -6,58 +6,34 @@ MODEL_CATALOG = {
         "openai": {
             "models": [
                 {"id": "openai/gpt-5", "name": "GPT-5", "cost": 15, "description": "Абсолютный флагман OpenAI. Непревзойденная логика, глубокий анализ данных и написание сложного кода."},
-                {"id": "openai/gpt-5.2", "name": "GPT-5.2", "cost": 20, "description": "Экспериментальная сверхмощная версия GPT-5. Максимальная креативность и понимание сложнейших контекстов."},
-                {"id": "openai/gpt-5-mini", "name": "GPT-5 Mini", "cost": 5, "description": "Облегченная версия GPT-5. Идеальный баланс между скоростью, ценой и выдающимся интеллектом."},
-                {"id": "openai/gpt-5-nano", "name": "GPT-5 Nano", "cost": 1, "description": "Самая быстрая и дешевая модель 5-го поколения для простых повседневных задач."},
-                {"id": "openai/gpt-4.1", "name": "GPT-4.1", "cost": 10, "description": "Улучшенная версия классического GPT-4. Отличный выбор для копирайтинга и переводов."},
-                {"id": "openai/gpt-4.1-mini", "name": "GPT-4.1 Mini", "cost": 4, "description": "Быстрая версия GPT-4.1. Отлично справляется с рутиной и ответами на простые вопросы."},
-                {"id": "openai/gpt-4o", "name": "GPT-4o", "cost": 5, "description": "Универсальная и очень быстрая модель (Omni). Прекрасно рассуждает и поддерживает живой диалог."},
-                {"id": "openai/gpt-4o-mini", "name": "GPT-4o Mini", "cost": 1, "description": "Младший брат GPT-4o. Работает молниеносно, потребляет минимум токенов."},
-                {"id": "openai/o3-mini", "name": "OpenAI o3-mini", "cost": 3, "description": "Специализированная модель для точных математических расчетов и STEM-задач."},
-                {"id": "openai/o1", "name": "OpenAI o1", "cost": 8, "description": "Модель с глубоким логическим мышлением. Берет паузу на 'подумать', прежде чем выдать идеальный ответ."},
-                {"id": "openai/gpt-oss-120b", "name": "GPT- OSS 120B", "cost": 2, "description": "Мощная open-source модель на базе архитектуры GPT с огромным объемом знаний."},
-                {"id": "openai/gpt-oss-20b", "name": "GPT-OSS 20B", "cost": 1, "description": "Быстрая 20-миллиардная open-source модель для базовых генераций текста."},
+                {"id": "openai/gpt-5-mini", "name": "GPT-5 Mini", "cost": 5, "description": "Идеальный баланс между скоростью, ценой и интеллектом."},
+                {"id": "openai/gpt-4o-mini", "name": "GPT-4o Mini", "cost": 1, "description": "Молниеносная и дешевая модель для повседневных задач."},
             ]
         },
         "anthropic": {
             "models": [
-                {"id": "anthropic/claude-sonnet-4.5", "name": "Claude Sonnet 4.5", "cost": 8, "description": "Легенда кодинга и работы с текстами. Пишет максимально естественно, по-человечески."},
-                {"id": "anthropic/claude-sonnet-4", "name": "Claude Sonnet 4", "cost": 6, "description": "Предыдущее поколение Sonnet. Надежная классика для работы с документами."},
-                {"id": "anthropic/claude-opus-4.5", "name": "Claude Opus 4.5", "cost": 20, "description": "Самая тяжелая и умная модель Anthropic. Для самых сложных аналитических задач."},
-                {"id": "anthropic/claude-haiku-4.5", "name": "Claude Haiku 4.5", "cost": 2, "description": "Невероятно быстрая модель. Читает и анализирует тексты со скоростью света."},
-                {"id": "anthropic/claude-3.5-sonnet", "name": "Claude 3.5 Sonnet", "cost": 5, "description": "Золотой стандарт среди разработчиков. Одна из лучших моделей для программирования."},
-                {"id": "anthropic/claude-3-opus", "name": "Claude 3 Opus", "cost": 15, "description": "Классический 'тяжеловес' от Anthropic 3-го поколения."},
-                {"id": "anthropic/claude-3-haiku", "name": "Claude 3 Haiku", "cost": 1, "description": "Простая, быстрая и дешевая модель для коротких запросов."},
+                {"id": "anthropic/claude-opus-4.5", "name": "Claude Opus 4.5", "cost": 20, "description": "Самая мощная модель Anthropic. Анализ, написание текстов, дизайн контента на высшем уровне."},
+                {"id": "anthropic/claude-sonnet-4.5", "name": "Claude Sonnet 4.5", "cost": 8, "description": "Золотой стандарт для работы с текстами и контентом. Пишет естественно, по-человечески."},
+                {"id": "anthropic/claude-haiku-4.5", "name": "Claude Haiku 4.5", "cost": 2, "description": "Быстрая и дешевая модель для коротких запросов."},
             ]
         },
         "google": {
             "models": [
-                {"id": "google/gemini-2.5-pro", "name": "Gemini 2.5 Pro", "cost": 5, "description": "Флагман от Google с гигантским контекстным окном. Идеальна для анализа целых книг и кода."},
-                {"id": "google/gemini-2.5-flash", "name": "Gemini 2.5 Flash", "cost": 2, "description": "Быстрая и эффективная модель от Google для ежедневных задач."},
-                {"id": "google/gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash Lite", "cost": 1, "description": "Максимально облегченная версия Gemini для мгновенных ответов."},
-                {"id": "google/gemini-2.5-flash-lite-preview-09-2025", "name": "Gemini 2.5 Flash Lite Preview", "cost": 1, "description": "Тестовая версия легкой модели с экспериментальными функциями."},
-                {"id": "google/gemini-3-pro-preview", "name": "Gemini 3 Pro Preview", "cost": 8, "description": "Предрелизная версия 3-го поколения. Будущее ИИ от Google в ваших руках."},
-                {"id": "google/gemini-3-flash-preview", "name": "Gemini 3 Flash Preview", "cost": 3, "description": "Быстрая версия 3-го поколения. Тестируйте новые алгоритмы Google первыми."},
-                {"id": "google/gemini-2.0-flash-001", "name": "Gemini 2.0 Flash", "cost": 1, "description": "Надежная базовая модель Google 2-го поколения."},
+                {"id": "google/gemini-2.5-pro", "name": "Gemini 2.5 Pro", "cost": 5, "description": "Флагман от Google с гигантским контекстным окном. Идеальна для анализа больших текстов."},
+                {"id": "google/gemini-2.5-flash", "name": "Gemini 2.5 Flash", "cost": 2, "description": "Быстрая и эффективная модель Google для ежедневных задач."},
+                {"id": "google/gemini-2.0-flash-001", "name": "Gemini 2.0 Flash", "cost": 1, "description": "Надежная базовая модель Google."},
             ]
         },
         "deepseek": {
             "models": [
-                {"id": "deepseek/deepseek-v3.2", "name": "DeepSeek V3.2", "cost": 3, "description": "Хит сезона! Пишет код на уровне лучших моделей мира, но стоит в разы дешевле."},
-                {"id": "deepseek/deepseek-chat-v3.1", "name": "DeepSeek Chat V3.1", "cost": 2, "description": "Отличная разговорная модель от китайских разработчиков."},
-                {"id": "deepseek/deepseek-chat-v3-0324", "name": "DeepSeek Chat V3 0324", "cost": 2, "description": "Стабильный билд разговорной модели DeepSeek."},
-                {"id": "deepseek/deepseek-r1", "name": "DeepSeek R1", "cost": 2, "description": "Специальная 'рассуждающая' модель (Reasoning). Логически решает сложные задачи по шагам."},
-            ]
-        },
-        "meta": {
-            "models": [
-                {"id": "meta-llama/llama-3.1-8b-instruct", "name": "Llama 3.1 8B", "cost": 1, "description": "Популярная открытая модель от Meta. Быстрая, легкая и без жесткой цензуры."},
+                {"id": "deepseek/deepseek-v3.2", "name": "DeepSeek V3.2", "cost": 3, "description": "Пишет код на уровне лучших моделей мира, но стоит в разы дешевле."},
+                {"id": "deepseek/deepseek-r1", "name": "DeepSeek R1", "cost": 2, "description": "Рассуждающая модель. Логически решает сложные задачи по шагам."},
             ]
         },
         "xai": {
             "models": [
-                {"id": "x-ai/grok-4.1-fast", "name": "Grok 4.1 Fast", "cost": 5, "description": "ИИ от Илона Маска. Дерзкий характер, доступ к свежим данным и минимум ограничений."},
-                {"id": "x-ai/grok-4-fast", "name": "Grok 4 Fast", "cost": 4, "description": "Предыдущая, но всё еще мощная версия бунтаря Grok."},
+                {"id": "x-ai/grok-4.1-fast", "name": "Grok 4.1 Fast", "cost": 5, "description": "ИИ от Илона Маска. Доступ к свежим данным и минимум ограничений."},
+                {"id": "x-ai/grok-4-fast", "name": "Grok 4 Fast", "cost": 4, "description": "Предыдущая, но всё еще мощная версия Grok."},
                 {"id": "x-ai/grok-code-fast-1", "name": "Grok Code Fast 1", "cost": 3, "description": "Специальная версия Grok, заточенная исключительно под написание и ревью кода."},
             ]
         },
@@ -75,11 +51,6 @@ MODEL_CATALOG = {
         "mistral": {
             "models": [
                 {"id": "mistralai/mistral-nemo", "name": "Mistral Nemo", "cost": 2, "description": "Эффективная европейская модель. Отличная логика и знание множества языков."},
-            ]
-        },
-        "tngtech": {
-            "models": [
-                {"id": "tngtech/deepseek-r1t2-chimera:free", "name": "DeepSeek R1T2 Chimera (Free)", "cost": 0, "description": "Бесплатная экспериментальная рассуждающая модель на базе DeepSeek."},
             ]
         },
     },
@@ -110,6 +81,7 @@ MODEL_CATALOG = {
             "models": [
                 {"id": "openai/gpt-5-image", "name": "GPT-5 Image", "cost": 5, "description": "Флагманский генератор изображений от создателей ChatGPT. Идеальное понимание сложных промптов."},
                 {"id": "openai/gpt-5-image-mini", "name": "GPT-5 Image Mini", "cost": 2, "description": "Облегченная версия генератора для быстрого создания креативов."},
+                {"id": "openai/gpt-image-2", "name": "GPT Image 2", "cost": 4, "description": "Новая генерация изображений от OpenAI. Высокая детализация и точное следование инструкциям."},
             ]
         },
     },
@@ -125,32 +97,19 @@ MODEL_CATALOG = {
     },
 
     "gen_video": {
-        "kling": {
+        # Подраздел “Видео по фото” (img2vid)
+        "video_from_photo": {
             "models": [
-                {"id": "fal-ai/kling-video/v2.6/pro/text-to-video", "name": "Kling 2.6 Pro (Text)", "cost": 35, "description": "Генерирует кинематографичные видео по текстовому описанию. Лучшая физика движений."},
-                {"id": "fal-ai/kling-video/v2.6/pro/image-to-video", "name": "Kling 2.6 Pro (Img2Vid)", "cost": 35, "description": "Оживляет любую вашу фотографию, превращая её в потрясающий видеоролик."},
-                {"id": "fal-ai/kling-video/v2.6/pro/motion-control", "name": "Kling 2.6 Pro (Motion)", "cost": 35, "description": "Переносит движения с видео-референса на вашего персонажа с фото (Motion Transfer)."},
-                {"id": "fal-ai/kling-video/v2.6/standard/motion-control", "name": "Kling 2.6 Std (Motion)", "cost": 20, "description": "Бюджетная версия захвата движений для анимации персонажей."},
+                {"id": "fal-ai/kling-video/v2.6/pro/image-to-video", "name": "Kling 2.6", "cost": 35, "description": "Оживляет любую вашу фотографию. Отправьте 1 фото."},
+                {"id": "fal-ai/veo3.1/image-to-video", "name": "Veo 3.1 (по 1 фото)", "cost": 30, "description": "Оживляет статичные картинки с естественной физикой Google. Отправьте 1 фото."},
+                {"id": "fal-ai/veo3.1/first-last-frame-to-video", "name": "Veo 3.1 (по 2 фото)", "cost": 30, "description": "Магия переходов: отправьте начальный и конечный кадр, нейросеть додумает видео между ними."},
+                {"id": "fal-ai/seedance-1-0/image-to-video", "name": "Seedance 2.0", "cost": 100, "description": "Премиум генерация видео из фото. Высочайшее качество анимации."},
             ]
         },
-        "veo": {
+        # Подраздел “Видео по образцу” (motion-control)
+        "video_from_motion": {
             "models": [
-                {"id": "fal-ai/veo3.1", "name": "Veo 3.1 (Text)", "cost": 30, "description": "Прорывная видеомодель от Google. Создает сверхреалистичные ролики по тексту."},
-                {"id": "fal-ai/veo3.1/image-to-video", "name": "Veo 3.1 (Img2Vid)", "cost": 30, "description": "Оживляет статичные картинки с невероятным качеством и естественной физикой Google."},
-                {"id": "fal-ai/veo3.1/extend-video", "name": "Veo 3.1 (Extend)", "cost": 30, "description": "Берет ваше существующее видео и плавно дорисовывает его продолжение."},
-                {"id": "fal-ai/veo3.1/reference-to-video", "name": "Veo 3.1 (Ref2Vid)", "cost": 30, "description": "Генерирует видео в стилистике предоставленного референса."},
-                {"id": "fal-ai/veo3.1/first-last-frame-to-video", "name": "Veo 3.1 (First-Last)", "cost": 30, "description": "Магия переходов: отправьте начальный и конечный кадр, а нейросеть додумает видео между ними."},
-                {"id": "fal-ai/veo3.1/fast", "name": "Veo 3.1 Fast (Text)", "cost": 15, "description": "Ускоренная генерация видео по тексту от Google."},
-                {"id": "fal-ai/veo3.1/fast/image-to-video", "name": "Veo 3.1 Fast (Img2Vid)", "cost": 15, "description": "Ускоренное 'оживление' фотографий."},
-                {"id": "fal-ai/veo3.1/fast/extend-video", "name": "Veo 3.1 Fast (Extend)", "cost": 15, "description": "Ускоренное продолжение вашего видеоролика."},
-                {"id": "fal-ai/veo3.1/fast/first-last-frame-to-video", "name": "Veo 3.1 Fast (First-Last)", "cost": 15, "description": "Ускоренная анимация перехода между двумя фотографиями."},
-            ]
-        },
-        "wan": {
-            "models": [
-                {"id": "wan/v2.6/text-to-video", "name": "Wan 2.6 (Text)", "cost": 25, "description": "Свежая модель для генерации стильных видеороликов по тексту."},
-                {"id": "wan/v2.6/image-to-video", "name": "Wan 2.6 (Img2Vid)", "cost": 25, "description": "Анимация картинок с акцентом на плавность и кинематографичность."},
-                {"id": "wan/v2.6/reference-to-video", "name": "Wan 2.6 (Ref2Vid)", "cost": 25, "description": "Создание видеороликов на основе визуального стиля вашего референса."},
+                {"id": "fal-ai/kling-video/v2.6/pro/motion-control", "name": "Kling Motion", "cost": 35, "description": "Переносит движения с видео-референса на персонажа с фото."},
             ]
         },
     },

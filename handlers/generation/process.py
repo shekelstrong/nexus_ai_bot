@@ -6,7 +6,7 @@ import re
 import tempfile
 from typing import Optional, Dict
 from aiogram import Router, F
-from aiogram.types import Message, BufferedInputFile, FSInputFile
+from aiogram.types import Message, BufferedInputFile, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
@@ -55,6 +55,68 @@ def normalize_url(raw: Optional[str]) -> Optional[str]:
     url = url.replace("\"", "%22")
     url = url.replace("`", "%60")
     return url
+
+@router.message(GenState.waiting_for_prompt_image, F.photo)
+async def handle_prompt_image(message: Message, state: FSMContext, session: AsyncSession):
+    """Handle reference image for prompt generation."""
+    photo = message.photo[-1]
+    data = await state.get_data()
+    prompt_mode = data.get("prompt_mode", "image")
+    video_duration = data.get("video_prompt_duration", "5")
+
+    status_msg = await message.answer("⏳ Анализирую изображение и составлю промпт...", parse_mode="HTML")
+
+    try:
+        image_url = await _get_file_url_or_base64(message.bot, photo.file_id)
+
+        from services.api_client import APIClient
+        api = APIClient()
+
+        if prompt_mode == "image":
+            system = (
+                "Ты эксперт по созданию промптов для генерации изображений. "
+                "Опиши детально сцену: объекты, стиль, освещение, цвета, атмосферу, композицию. "
+                "Генерируй промпт на английском для использования в Midjourney, Flux, Stable Diffusion или аналогичных инструментах."
+            )
+            user_msg = f"[Image] Создай подробный промпт для генерации изображения по этому референсу: {image_url}"
+        else:
+            system = (
+                f"Ты эксперт по созданию промптов для видеогенерации. "
+                f"Опиши движение, действие, атмосферу, освещение, стиль для видео на {video_duration} секунд. "
+                "Генерируй промпт на английском для использования в Kling, Veo или аналогичных видеомоделях."
+            )
+            user_msg = f"[Image] Создай подробный промпт для видео ({video_duration} секунд) по этому референсу: {image_url}"
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_msg}
+        ]
+        result = await api.generate_text("anthropic/claude-haiku-4.5", messages)
+
+        await status_msg.delete()
+        if result:
+            from keyboards.inline import back_to_menu_kb, prompt_menu
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Использовать промпт", callback_data="back_to_menu", style="success")],
+                [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu", style="success")]
+            ])
+            await message.answer(
+                f"✨ <b>Готовый промпт:</b>\n\n<code>{result[:3500]}</code>",
+                parse_mode="HTML",
+                reply_markup=kb
+            )
+        else:
+            await message.answer("❌ Не удалось составить промпт. Попробуйте ещё раз.", reply_markup=back_to_menu_kb())
+    except Exception as e:
+        logger.error(f"Prompt gen error: {e}")
+        try:
+            await status_msg.delete()
+        except:
+            pass
+        await message.answer(f"❌ Ошибка: {e}", reply_markup=back_to_menu_kb())
+    finally:
+        await state.clear()
+
 
 @router.message(GenState.waiting_for_first_image, F.photo)
 async def step_first_image(message: Message, state: FSMContext, session: AsyncSession):
@@ -297,7 +359,14 @@ async def _process_single_message(message: Message, state: FSMContext, session: 
         await run_image_generation(message, session, final_prompt, reference_images, state)
         return
 
-    await run_simple_generation(message, user, session, model_info, category)
+    # Передаём видео-параметры (формат, длительность) в extra_params
+    extra_params = {}
+    if category == "gen_video":
+        data = await state.get_data()
+        extra_params["aspect_ratio"] = data.get("video_ratio", "16:9")
+        extra_params["duration"] = data.get("video_duration", "5")
+
+    await run_simple_generation(message, user, session, model_info, category, extra_params=extra_params)
 
 async def run_complex_generation(
     message: Message,
@@ -399,7 +468,7 @@ async def run_complex_generation(
                     input_file_video,
                     caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
-                    reply_markup=post_generation_kb(gen_id),
+                    reply_markup=post_generation_kb(gen_id, model_id=model_id),
                     supports_streaming=True
                 )
                 sent_video_ok = True
@@ -412,7 +481,7 @@ async def run_complex_generation(
                     res_url,
                     caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
-                    reply_markup=post_generation_kb(gen_id),
+                    reply_markup=post_generation_kb(gen_id, model_id=model_id),
                 )
                 sent_video_ok = True
             except Exception as e:
@@ -445,7 +514,7 @@ async def run_complex_generation(
                 "⚠️ Не удалось загрузить видео в Telegram, вот прямая ссылка:\n"
                 f"<a href='{res_url}'>Скачать видео</a>",
                 parse_mode="HTML",
-                reply_markup=post_generation_kb(gen_id),
+                reply_markup=post_generation_kb(gen_id, model_id=model_id),
             )
 
         try:
@@ -531,7 +600,7 @@ async def run_image_generation(
                     res,
                     caption=f"🎨 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
-                    reply_markup=post_generation_kb(gen_id),
+                    reply_markup=post_generation_kb(gen_id, model_id=model_id),
                 )
             else:
                 image_url = normalize_url(str(res))
@@ -539,7 +608,7 @@ async def run_image_generation(
                     image_url,
                     caption=f"🎨 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                     parse_mode="HTML",
-                    reply_markup=post_generation_kb(gen_id),
+                    reply_markup=post_generation_kb(gen_id, model_id=model_id),
                 )
                 
             # ОБНОВЛЯЕМ БД TELEGRAM FILE_ID
@@ -560,7 +629,7 @@ async def run_image_generation(
                     "⚠️ Не удалось отправить изображение в Telegram.\n"
                     f"<a href='{image_url}'>Скачать изображение</a>",
                     parse_mode="HTML",
-                    reply_markup=post_generation_kb(gen_id),
+                    reply_markup=post_generation_kb(gen_id, model_id=model_id),
                 )
             else:
                 await message.answer(
@@ -585,9 +654,12 @@ async def run_image_generation(
             await state.update_data(album_photos=None, album_prompt=None)
             await state.set_state(GenState.waiting_for_input)
 
-async def run_simple_generation(message: Message, user: User, session: AsyncSession, model_info: dict, category: str):
+async def run_simple_generation(message: Message, user: User, session: AsyncSession, model_info: dict, category: str, extra_params: dict = None):
     cost = model_info.get("cost", 1)
     prompt = message.caption or message.text or ""
+
+    if extra_params is None:
+        extra_params = {}
 
     if user.tokens_balance < cost:
         await message.answer(f"❌ Недостаточно токенов! Нужно {cost}.", parse_mode="HTML")
@@ -609,7 +681,7 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             prompt = "Creative video"
 
         if category == "gen_video":
-            res = await api.generate_video(model_info["id"], prompt, image_url=image_url)
+            res = await api.generate_video(model_info["id"], prompt, image_url=image_url, extra_params=extra_params)
             if not res:
                 raise Exception("Ошибка видео")
             
@@ -623,7 +695,7 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
                 normalize_url(res),
                 caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
                 parse_mode="HTML",
-                reply_markup=post_generation_kb(gen.id),
+                reply_markup=post_generation_kb(gen.id, model_id=model_info["id"]),
             )
             
             if sent_msg and sent_msg.video:

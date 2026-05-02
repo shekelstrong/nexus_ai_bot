@@ -32,9 +32,12 @@ SUBSCRIPTION_PLANS = {
 
 # Пакеты докупки токенов (бессрочные)
 PACKETS = {
-    "tokens_25":  {"price_rub": 390,  "tokens": 25,   "type": "tokens", "name": "🪙 25 токенов"},
-    "tokens_50":  {"price_rub": 590,  "tokens": 50,   "type": "tokens", "name": "🪙 50 токенов"},
-    "tokens_100": {"price_rub": 1190, "tokens": 100,  "type": "tokens", "name": "🪙 100 токенов"},
+    "tokens_50":   {"price_rub": 150,  "tokens": 50,   "type": "tokens", "name": "🪙 50 токенов"},
+    "tokens_100":  {"price_rub": 250,  "tokens": 100,  "type": "tokens", "name": "🪙 100 токенов"},
+    "tokens_300":  {"price_rub": 750,  "tokens": 300,  "type": "tokens", "name": "🪙 300 токенов"},
+    "tokens_500":  {"price_rub": 1150, "tokens": 500,  "type": "tokens", "name": "🪙 500 токенов"},
+    "tokens_1000": {"price_rub": 1950, "tokens": 1000, "type": "tokens", "name": "🪙 1000 токенов"},
+    "tokens_2500": {"price_rub": 3750, "tokens": 2500, "type": "tokens", "name": "🪙 2500 токенов"},
 }
 
 

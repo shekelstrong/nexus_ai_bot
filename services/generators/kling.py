@@ -110,22 +110,25 @@ class KlingGenerator:
             logger.info("Kling: режим Motion Control обнаружен.")
             return payload
 
+        aspect_ratio = extra_params.get("aspect_ratio", "16:9")
+        duration = str(extra_params.get("duration", "5"))
+
         # Image-to-Video
         if "image-to" in model_lower or "img2vid" in model_lower:
             if not image_url: return None
             return {
                 "prompt": prompt or "High quality video",
                 "image_url": image_url,
-                "duration": "5",
-                "aspect_ratio": "16:9",
+                "duration": duration,
+                "aspect_ratio": aspect_ratio,
                 "cfg_scale": 0.5
             }
 
         # Text-to-Video
         payload = {
             "prompt": prompt or "Masterpiece",
-            "duration": "5",
-            "aspect_ratio": "16:9",
+            "duration": duration,
+            "aspect_ratio": aspect_ratio,
             "cfg_scale": 0.5
         }
         if image_url: payload["image_url"] = image_url

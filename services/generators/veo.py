@@ -37,7 +37,8 @@ class VeoGenerator:
             payload["image_url"] = image_url
 
         else:
-            payload["aspect_ratio"] = "16:9"
+            aspect_ratio = extra_params.get("aspect_ratio", "16:9") if extra_params else "16:9"
+            payload["aspect_ratio"] = aspect_ratio
 
         return await self._submit_and_poll(model_id, payload)
 

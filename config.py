@@ -75,9 +75,12 @@ SUBSCRIPTION_TIERS = {
 
 # Пакеты докупки токенов (бессрочные)
 TOKEN_PACKAGES = {
-    "tokens_25":  {"price": 390,  "tokens": 25,   "name": "🪙 25 токенов"},
-    "tokens_50":  {"price": 590,  "tokens": 50,   "name": "🪙 50 токенов"},
-    "tokens_100": {"price": 1190, "tokens": 100,  "name": "🪙 100 токенов"},
+    "tokens_50":   {"price": 150,  "tokens": 50,   "name": "🪙 50 токенов"},
+    "tokens_100":  {"price": 250,  "tokens": 100,  "name": "🪙 100 токенов"},
+    "tokens_300":  {"price": 750,  "tokens": 300,  "name": "🪙 300 токенов"},
+    "tokens_500":  {"price": 1150, "tokens": 500,  "name": "🪙 500 токенов"},
+    "tokens_1000": {"price": 1950, "tokens": 1000, "name": "🪙 1000 токенов"},
+    "tokens_2500": {"price": 3750, "tokens": 2500, "name": "🪙 2500 токенов"},
 }
 
 # Старые тарифы (для совместимости, будут удалены позже)

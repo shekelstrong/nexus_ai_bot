@@ -5,7 +5,12 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from keyboards.inline import main_menu, model_families_menu, models_list_menu, back_to_menu_kb, nano_banana_menu
+from keyboards.inline import (
+    main_menu, model_families_menu, models_list_menu, back_to_menu_kb,
+    nano_banana_menu, video_category_menu, text_models_menu, prompt_menu,
+    video_prompt_duration_menu, video_format_menu, video_duration_menu,
+    post_video_gen_kb
+)
 from database.models import User
 from model_config import MODEL_CATALOG
 from states.generation_states import GenState
@@ -108,33 +113,32 @@ async def ignore_callback(callback: CallbackQuery):
     await callback.answer()
 
 @router.callback_query(F.data.startswith("cat:"))
-async def select_category_callback(callback: CallbackQuery):
+async def select_category_callback(callback: CallbackQuery, state: FSMContext):
     try:
         category = callback.data.split(":")[1]
-        titles = {
-            "gen_text": "<b>Текстовые модели</b>",
-            "gen_nano_banana": "<b>Nano Banana</b>",
-            "gen_image": "<b>Генерация изображений</b>",
-            "gen_video": "<b>Генерация видео</b>",
-            "gen_search": "<b>Поисковые модели</b>"
-        }
-        title = titles.get(category, "Выберите категорию")
         img_path = CATEGORY_IMAGES.get(category)
-        
+
         if category == "gen_nano_banana":
-            await _send_menu(
-                callback,
-                f"{title}\nВыберите модель:",
-                nano_banana_menu(),
-                img_path
-            )
+            await _send_menu(callback, "<b>Nano Banana</b>\nВыберите модель:", nano_banana_menu(), img_path)
+
+        elif category == "gen_text":
+            await _send_menu(callback, "<b>Текстовые модели</b>\nВыберите бренд:", text_models_menu(), img_path)
+
+        elif category == "gen_video":
+            await _send_menu(callback, "<b>Генерация видео</b>\nВыберите тип:", video_category_menu(), img_path)
+
+        elif category == "gen_prompt":
+            await _send_menu(callback, "<b>✨ Промпт</b>\nПолучите промпт по референсному изображению:", prompt_menu(), img_path)
+
+        elif category == "gen_image":
+            await _send_menu(callback, "<b>Генерация изображений</b>\nВыберите семейство моделей:", model_families_menu(category), img_path)
+
+        elif category == "gen_search":
+            await _send_menu(callback, "<b>Поисковые модели</b>\nВыберите семейство моделей:", model_families_menu(category), img_path)
+
         else:
-            await _send_menu(
-                callback,
-                f"{title}\nВыберите семейство моделей:",
-                model_families_menu(category),
-                img_path
-            )
+            await _send_menu(callback, "Выберите категорию", model_families_menu(category), img_path)
+
     except Exception as e:
         logger.error(f"Error in category selection: {e}")
         await callback.message.answer("Меню устарело. Вызовите /start")
@@ -237,6 +241,129 @@ async def show_styles_page(callback: CallbackQuery, state: FSMContext, page: int
                 pass
             await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
 
+# --- Обработчики Промпта ---
+
+@router.callback_query(F.data == "prompt_for_image")
+async def prompt_for_image_handler(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Generate a descriptive image prompt from a reference photo."""
+    await state.clear()
+    await state.update_data(prompt_mode="image")
+    await state.set_state(GenState.waiting_for_prompt_image)
+    await callback.message.answer(
+        "🖼️ <b>Промпт для фото</b>\n\n"
+        "Отправьте <b>референсное изображение</b>, и я составлю подробный промпт для генерации аналогичного изображения.",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_kb()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "prompt_for_video")
+async def prompt_for_video_handler(callback: CallbackQuery, state: FSMContext):
+    """Video prompt generation — first choose duration."""
+    await callback.message.edit_text(
+        "🎥 <b>Промпт для видео</b>\n\nВыберите <b>длительность</b> видео:",
+        parse_mode="HTML",
+        reply_markup=video_prompt_duration_menu()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("vprompt_dur:"))
+async def vprompt_duration_handler(callback: CallbackQuery, state: FSMContext):
+    duration = callback.data.split(":")[1]
+    await state.clear()
+    await state.update_data(prompt_mode="video", video_prompt_duration=duration)
+    await state.set_state(GenState.waiting_for_prompt_image)
+    await callback.message.answer(
+        f"🖼️ <b>Промпт для видео ({duration} сек.)</b>\n\n"
+        "Отправьте <b>референсное изображение</b>, и я составлю промпт для видео-генерации.",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_kb()
+    )
+    await callback.answer()
+
+
+# --- Обработчики формата/длительности видео ---
+
+@router.callback_query(F.data.startswith("vformat:"))
+async def video_format_handler(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":", 1)
+    ratio = parts[1] if len(parts) > 1 else "16:9"
+    await state.update_data(video_ratio=ratio)
+    await callback.message.edit_text(
+        f"✅ Формат <b>{ratio}</b> выбран!\n\nТеперь выберите <b>длительность</b>:",
+        parse_mode="HTML",
+        reply_markup=video_duration_menu()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("vduration:"))
+async def video_duration_handler(callback: CallbackQuery, state: FSMContext):
+    duration = callback.data.split(":")[1]
+    await state.update_data(video_duration=duration)
+    await state.set_state(GenState.waiting_for_input)
+    data = await state.get_data()
+    ratio = data.get("video_ratio", "16:9")
+    current_model_name = data.get("current_model_name", "Модель")
+    await callback.message.edit_text(
+        f"✅ Настройки: <b>{ratio}</b>, <b>{duration} сек.</b>\n"
+        f"Модель: <b>{current_model_name}</b>\n\n"
+        "Отправьте фото или напишите описание:",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_kb()
+    )
+    await callback.answer()
+
+
+# --- Кнопка «Снова в этой модели» ---
+
+@router.callback_query(F.data.startswith("regen_model:"))
+async def regen_model_handler(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Restart generation in the same model without going back to menu."""
+    model_id = callback.data.split(":", 1)[1]
+    result = await session.execute(select(User).where(User.telegram_id == callback.from_user.id))
+    user = result.scalar_one_or_none()
+    if user:
+        user.current_model = model_id
+        await session.commit()
+
+    info = MODEL_INFO.get(model_id, {})
+    name = info.get("name", "Модель")
+    category = info.get("category", "gen_text")
+
+    await state.clear()
+    await state.update_data(current_model_name=name)
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except:
+        pass
+
+    if category == "gen_video":
+        await callback.message.answer(
+            f"🔄 <b>Снова: {name}</b>\n\nВыберите формат видео:",
+            parse_mode="HTML",
+            reply_markup=video_format_menu()
+        )
+    elif category in ["gen_image", "gen_nano_banana"]:
+        await state.set_state(GenState.waiting_for_input)
+        await callback.message.answer(
+            f"🔄 <b>Снова: {name}</b>\n\nОтправьте промпт (и фото при необходимости):",
+            parse_mode="HTML",
+            reply_markup=back_to_menu_kb()
+        )
+    else:
+        await state.set_state(GenState.waiting_for_input)
+        await callback.message.answer(
+            f"🔄 <b>Снова: {name}</b>\n\nНапишите ваш запрос:",
+            parse_mode="HTML",
+            reply_markup=back_to_menu_kb()
+        )
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("set_model:"))
 async def set_model_handler(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     model_id = callback.data.split(":", 1)[1]
@@ -269,29 +396,11 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
     desc_text = f"\nℹ️ <i>{description}</i>\n" if description else ""
     
     if category in ["gen_image", "gen_nano_banana"]:
-        if model_id == "google/gemini-2.5-flash-image":
-            await state.update_data(ratio="1:1", size_prompt="")
-            await show_styles_page(callback, state, 0, skipped_size=True, is_new_msg=True)
-            await callback.answer()
-            return
-
-        if family == "gemini_image":
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="1:1", callback_data="size_1:1", style="primary")],
-                [InlineKeyboardButton(text="2:3", callback_data="size_2:3", style="primary"), InlineKeyboardButton(text="3:2", callback_data="size_3:2", style="primary")],
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
-            ])
-        else:
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="1:1", callback_data="size_1:1", style="primary"), InlineKeyboardButton(text="16:9", callback_data="size_16:9", style="primary")],
-                [InlineKeyboardButton(text="9:16", callback_data="size_9:16", style="primary"), InlineKeyboardButton(text="4:3", callback_data="size_4:3", style="primary")],
-                [InlineKeyboardButton(text="3:4", callback_data="size_3:4", style="primary"), InlineKeyboardButton(text="21:9", callback_data="size_21:9", style="primary")],
-                [InlineKeyboardButton(text="2:3", callback_data="size_2:3", style="primary"), InlineKeyboardButton(text="3:2", callback_data="size_3:2", style="primary")],
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu")]
-            ])
-        
-        text = f"✅ Выбрана: <b>{name}</b>{desc_text}\nТеперь выберите соотношение сторон (размер):"
-        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+        # Сразу в режим ввода без выбора размеров/стилей
+        await state.update_data(ratio="1:1", size_prompt="", style_prompt="", style="Без стиля")
+        text = f"✅ Выбрана: <b>{name}</b>{desc_text}\n\nОтправьте промпт (и фото-референс при необходимости):"
+        await state.set_state(GenState.waiting_for_input)
+        await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
         await callback.answer()
         return
 
@@ -307,23 +416,22 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
         if "motion-control" in model_id:
             text += "<b>Шаг 1:</b> Отправьте <b>фотографию персонажа</b>, которого хотите анимировать."
             await state.set_state(GenState.waiting_for_first_image)
-        elif "first-last" in model_id or "first last" in model_id:
+            await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
+        elif "first-last" in model_id:
             text += "<b>Шаг 1:</b> Отправьте <b>первую картинку</b> (начальный кадр)."
             await state.set_state(GenState.waiting_for_first_image)
-        elif "image-to-video" in model_id or "img2vid" in model_id or "reference-to-video" in model_id:
-            text += "Теперь отправьте <b>фотографию</b>, которую нужно оживить."
-            await state.set_state(GenState.waiting_for_input)
-        elif "extend" in model_id:
-            text += "Теперь отправьте <b>видео</b> для продолжения."
-            await state.set_state(GenState.waiting_for_input)
+            await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
         else:
-            text += "Теперь напишите <b>описание видео</b> (промпт)."
-            await state.set_state(GenState.waiting_for_input)
+            # Для всех остальных видео-моделей: выбор формата
+            await callback.message.answer(
+                f"✅ Выбрана: <b>{name}</b>{desc_text}\n\nВыберите <b>формат</b> видео:",
+                parse_mode="HTML",
+                reply_markup=video_format_menu()
+            )
     else:
         text += "Теперь просто напишите ваш <b>запрос (промпт)</b>."
         await state.set_state(GenState.waiting_for_input)
-        
-    await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
+        await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
     await callback.answer()
 
 @router.callback_query(F.data.startswith("size_"))

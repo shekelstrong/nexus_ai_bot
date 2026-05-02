@@ -11,3 +11,6 @@ class GenState(StatesGroup):
     waiting_for_first_image = State()   # Ждем картинку персонажа / первого кадра
     waiting_for_second_image = State()  # Ждем второй кадр (для First-Last)
     waiting_for_reference_video = State() # Ждем видео с движением (для Motion Control)
+
+    # Для режима промпта
+    waiting_for_prompt_image = State()  # Ждем референсное фото для составления промпта
