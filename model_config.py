@@ -81,7 +81,7 @@ MODEL_CATALOG = {
             "models": [
                 {"id": "openai/gpt-5-image", "name": "GPT-5 Image", "cost": 5, "description": "Флагманский генератор изображений от создателей ChatGPT. Идеальное понимание сложных промптов."},
                 {"id": "openai/gpt-5-image-mini", "name": "GPT-5 Image Mini", "cost": 2, "description": "Облегченная версия генератора для быстрого создания креативов."},
-                {"id": "openai/gpt-image-2", "name": "GPT Image 2", "cost": 4, "description": "Новая генерация изображений от OpenAI. Высокая детализация и точное следование инструкциям."},
+                {"id": "openai/gpt-5.4-image-2", "name": "GPT Image 2", "cost": 8, "description": "GPT-5.4 + GPT Image 2 от OpenAI. Многомодальная генерация с высшим качеством и точным следованием промпту."},
             ]
         },
     },
@@ -103,7 +103,7 @@ MODEL_CATALOG = {
                 {"id": "fal-ai/kling-video/v2.6/pro/image-to-video", "name": "Kling 2.6", "cost": 35, "description": "Оживляет любую вашу фотографию. Отправьте 1 фото."},
                 {"id": "fal-ai/veo3.1/image-to-video", "name": "Veo 3.1 (по 1 фото)", "cost": 30, "description": "Оживляет статичные картинки с естественной физикой Google. Отправьте 1 фото."},
                 {"id": "fal-ai/veo3.1/first-last-frame-to-video", "name": "Veo 3.1 (по 2 фото)", "cost": 30, "description": "Магия переходов: отправьте начальный и конечный кадр, нейросеть додумает видео между ними."},
-                {"id": "fal-ai/seedance-1-0/image-to-video", "name": "Seedance 2.0", "cost": 100, "description": "Премиум генерация видео из фото. Высочайшее качество анимации."},
+                {"id": "bytedance/seedance-2.0/image-to-video", "name": "Seedance 2.0", "cost": 100, "description": "Премиум генерация видео из фото. Анимирует синхронным звуком, управление начальным/конечным кадром."},
             ]
         },
         # Подраздел “Видео по образцу” (motion-control)

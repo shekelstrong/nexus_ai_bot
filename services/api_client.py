@@ -94,6 +94,9 @@ class APIClient:
 
         logger.info(f"APIClient: Запрос видео-генерации. Модель: {model}, Image: {bool(image_url)}")
 
+        if "seedance" in model_lower:
+            return await self.kling_gen.generate(model, prompt, image_url, extra_params)
+
         if "kling" in model_lower:
             return await self.kling_gen.generate(model, prompt, image_url, extra_params)
             

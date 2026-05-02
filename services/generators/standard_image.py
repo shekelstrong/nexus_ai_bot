@@ -30,8 +30,8 @@ class StandardImageGenerator:
         if reference_images is None:
             reference_images = []
 
-        # GPT Image 2 (dall-e-3 compatible) — native OpenAI API
-        if "gpt-image-2" in model.lower():
+        # GPT Image 2 via OpenRouter (openai/gpt-5.4-image-2)
+        if "gpt-5.4-image-2" in model.lower() or "gpt-image-2" in model.lower():
             return await self._generate_gpt_image_2(prompt, reference_images)
 
         # --- ОПРЕДЕЛЯЕМ НУЖНЫЕ MODALITIES ---
@@ -162,27 +162,21 @@ class StandardImageGenerator:
             "Authorization": f"Bearer {cfg.OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
         }
-        # gpt-image-2 идёт через OpenRouter как обычная модель генерации изображений
+        # openai/gpt-5.4-image-2 идёт через OpenRouter как multimodal модель
         safe_prompt = (prompt or "").strip() or "A beautiful creative image"
-        payload = {
-            "model": "openai/gpt-image-1",
-            "prompt": safe_prompt,
-            "n": 1,
-            "size": "1024x1024",
-        }
-        # Если есть референс, переходим на chat-based fallback (референсы в DALL-E 3 не поддерживаются нативно)
-        if reference_images:
-            logger.info("GPT Image 2: references present, falling back to chat completions")
-            return await self.generate("openai/gpt-5-image-mini", prompt, reference_images)
-
         try:
-            timeout = aiohttp.ClientTimeout(total=120, sock_connect=30)
-            # Для OpenRouter — используем через chat completions
+            timeout = aiohttp.ClientTimeout(total=300, sock_connect=60)
             chat_url = "https://openrouter.ai/api/v1/chat/completions"
+
+            content_parts = []
+            for img_url in (reference_images or [])[:3]:
+                content_parts.append({"type": "image_url", "image_url": {"url": img_url}})
+            content_parts.append({"type": "text", "text": safe_prompt})
+
             chat_payload = {
-                "model": "openai/gpt-image-1",
-                "messages": [{"role": "user", "content": safe_prompt}],
-                "modalities": ["image"]
+                "model": "openai/gpt-5.4-image-2",
+                "messages": [{"role": "user", "content": content_parts}],
+                "modalities": ["image", "text"]
             }
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(chat_url, headers=self.headers, json=chat_payload) as resp:
@@ -194,7 +188,9 @@ class StandardImageGenerator:
                     msg = data.get("choices", [{}])[0].get("message", {})
                     images = msg.get("images", [])
                     if images:
-                        return self._process_url(images[0] if isinstance(images[0], str) else images[0].get("image_url", {}).get("url"))
+                        raw = images[0]
+                        url = raw if isinstance(raw, str) else raw.get("image_url", {}).get("url")
+                        return self._process_url(url)
                     content = msg.get("content", "")
                     if isinstance(content, list):
                         for part in content:
