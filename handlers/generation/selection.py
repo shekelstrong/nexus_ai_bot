@@ -454,9 +454,11 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
     if category == "gen_text":
         text += "Теперь просто напишите ваш <b>запрос (промпт)</b>."
         await state.set_state(GenState.waiting_for_input)
+        await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
     elif category == "gen_search":
         text += "🔍 Теперь напишите ваш <b>вопрос для поиска</b>."
         await state.set_state(GenState.waiting_for_input)
+        await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
     elif category == "gen_video":
         if "motion-control" in model_id:
             text += "<b>Шаг 1:</b> Отправьте <b>фотографию персонажа</b>, которого хотите анимировать."
