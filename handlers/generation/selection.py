@@ -159,10 +159,44 @@ async def select_family_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu_handler(callback: CallbackQuery, state: FSMContext):
+    # Не очищаем state полностью — сохраняем промпт и данные модели,
+    # чтобы пользователь мог вернуться и продолжить
+    current_data = await state.get_data()
+    saved_prompt = current_data.get("saved_prompt", "")
+    saved_model = current_data.get("saved_model", current_data.get("current_model", ""))
+    
     await state.clear()
+    # Восстанавливаем сохранённые данные
+    if saved_prompt:
+        await state.update_data(saved_prompt=saved_prompt)
+    if saved_model:
+        await state.update_data(saved_model=saved_model)
+    
     await _send_menu(
         callback,
         "<b>Главное меню:</b>\nВыберите действие:",
+        main_menu(),
+        img_path=None
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "use_generated_prompt")
+async def use_generated_prompt_handler(callback: CallbackQuery, state: FSMContext):
+    """Пользователь нажал «Использовать промпт» — сохраняем и предлагаем выбрать модель."""
+    data = await state.get_data()
+    saved_prompt = data.get("saved_prompt", "")
+    
+    if not saved_prompt:
+        await callback.answer("Промпт не найден, начните заново", show_alert=True)
+        return
+    
+    # Промпт сохранён, предлагаем выбрать категорию/модель
+    await _send_menu(
+        callback,
+        "<b>Промпт сохранён! ✅</b>\n\n"
+        f"Ваш промпт: <code>{saved_prompt[:200]}{'...' if len(saved_prompt) > 200 else ''}</code>\n\n"
+        "Теперь выберите модель для генерации:",
         main_menu(),
         img_path=None
     )
@@ -333,8 +367,16 @@ async def regen_model_handler(callback: CallbackQuery, state: FSMContext, sessio
     name = info.get("name", "Модель")
     category = info.get("category", "gen_text")
 
+    # Сохраняем saved_prompt перед очисткой state
+    state_data = await state.get_data()
+    preserved_prompt = state_data.get("saved_prompt", "")
+
     await state.clear()
     await state.update_data(current_model_name=name)
+    
+    # Восстанавливаем сохранённый промпт
+    if preserved_prompt:
+        await state.update_data(saved_prompt=preserved_prompt)
 
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -349,8 +391,11 @@ async def regen_model_handler(callback: CallbackQuery, state: FSMContext, sessio
         )
     elif category in ["gen_image", "gen_nano_banana"]:
         await state.set_state(GenState.waiting_for_input)
+        prompt_hint = ""
+        if preserved_prompt:
+            prompt_hint = f"\n\n💡 <i>У вас есть сохранённый промпт — просто отправьте /use или скопируйте:</i>\n<code>{preserved_prompt[:300]}</code>"
         await callback.message.answer(
-            f"🔄 <b>Снова: {name}</b>\n\nОтправьте промпт (и фото при необходимости):",
+            f"🔄 <b>Снова: {name}</b>\n\nОтправьте промпт (и фото при необходимости):{prompt_hint}",
             parse_mode="HTML",
             reply_markup=back_to_menu_kb()
         )

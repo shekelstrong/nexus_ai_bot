@@ -22,24 +22,23 @@ router = Router(name="payment_router")
 @router.callback_query(F.data == "subscriptions")
 async def show_subscriptions(cb: CallbackQuery):
     """
-    Показываем общее меню тарифов.
+    Показываем меню пакетов токенов.
     """
     text = (
-        "💎 <b>Тарифные планы NexusAI</b>\n\n"
-        "📋 <b>Подписки (ежемесячно):</b>\n"
-        "• BASIC: 460 токенов/месяц\n"
-        "• PRO: 880 токенов/месяц\n"
-        "• VIP: 1700 токенов/месяц\n"
-        "• ELITE: 2600 токенов/месяц\n\n"
-        "🛒 <b>Пакеты (бессрочно):</b>\n"
-        "• Токены: 25/50/100\n\n"
-        "👇 <b>Выберите раздел:</b>"
+        "🪙 <b>Пакеты токенов NexusAI</b>\n\n"
+        "Дополнительные токены для генерации:\n"
+        "• Текст: 1-20 токенов за запрос\n"
+        "• Изображения: 1-8 токенов за генерацию\n"
+        "• Видео: 15-35 токенов за генерацию\n"
+        "• Поиск: 1-6 токенов за запрос\n\n"
+        "⏳ <b>Токены не сгорают!</b>\n\n"
+        "👇 <b>Выберите размер пакета:</b>"
     )
 
     await cb.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=subscription_tiers_menu(),
+        reply_markup=token_package_menu(),
     )
     await cb.answer()
 

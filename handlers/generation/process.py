@@ -102,9 +102,12 @@ async def handle_prompt_image(message: Message, state: FSMContext, session: Asyn
 
         await status_msg.delete()
         if result:
+            # Сохраняем промпт в state для последующего использования
+            await state.update_data(saved_prompt=result[:3500], saved_prompt_mode=prompt_mode)
+            
             from keyboards.inline import back_to_menu_kb, prompt_menu
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Использовать промпт", callback_data="back_to_menu", style="success")],
+                [InlineKeyboardButton(text="✅ Использовать промпт", callback_data="use_generated_prompt", style="success")],
                 [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu", style="success")]
             ])
             await message.answer(
@@ -122,7 +125,8 @@ async def handle_prompt_image(message: Message, state: FSMContext, session: Asyn
             pass
         await message.answer(f"❌ Ошибка: {e}", reply_markup=back_to_menu_kb())
     finally:
-        await state.clear()
+        # Не очищаем state полностью — промпт может понадобиться
+        pass
 
 
 @router.message(GenState.waiting_for_first_image, F.photo)
@@ -341,6 +345,15 @@ async def _process_single_message(message: Message, state: FSMContext, session: 
                 reference_images.append(ref_url)
         
         prompt = message.text or message.caption or ""
+
+        # Если пользователь отправил /use — подставляем сохранённый промпт
+        if prompt.strip() == "/use":
+            data = await state.get_data()
+            prompt = data.get("saved_prompt", "")
+            if not prompt:
+                await state.set_state(GenState.waiting_for_input)
+                await message.answer("❌ Нет сохранённого промпта. Отправьте текст или фото.", parse_mode="HTML")
+                return
 
         if not reference_images and not prompt:
             await state.set_state(GenState.waiting_for_input)
