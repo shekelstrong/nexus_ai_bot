@@ -25,14 +25,15 @@ class StandardImageGenerator:
         self,
         model: str,
         prompt: str,
-        reference_images: Optional[List[str]] = None
+        reference_images: Optional[List[str]] = None,
+        size: Optional[str] = None
     ) -> Optional[Union[str, BufferedInputFile]]:
         if reference_images is None:
             reference_images = []
 
         # GPT Image 2 via OpenRouter (openai/gpt-5.4-image-2)
         if "gpt-5.4-image-2" in model.lower() or "gpt-image-2" in model.lower():
-            return await self._generate_gpt_image_2(prompt, reference_images)
+            return await self._generate_gpt_image_2(prompt, reference_images, size=size)
 
         # --- ОПРЕДЕЛЯЕМ НУЖНЫЕ MODALITIES ---
         req_modalities = ["image"]
@@ -153,7 +154,8 @@ class StandardImageGenerator:
     async def _generate_gpt_image_2(
         self,
         prompt: str,
-        reference_images: Optional[List[str]] = None
+        reference_images: Optional[List[str]] = None,
+        size: Optional[str] = None
     ) -> Optional[Union[str, BufferedInputFile]]:
         """Generate image via OpenAI Images API (gpt-image-1 / dall-e-3)."""
         from config import settings as cfg
@@ -178,6 +180,10 @@ class StandardImageGenerator:
                 "messages": [{"role": "user", "content": content_parts}],
                 "modalities": ["image", "text"]
             }
+
+            # Добавляем размер, если указан
+            if size:
+                chat_payload["image_config"] = {"size": size}
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(chat_url, headers=self.headers, json=chat_payload) as resp:
                     if resp.status != 200:

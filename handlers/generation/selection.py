@@ -9,7 +9,7 @@ from keyboards.inline import (
     main_menu, model_families_menu, models_list_menu, back_to_menu_kb,
     nano_banana_menu, video_category_menu, text_models_menu, prompt_menu,
     video_prompt_duration_menu, video_format_menu, video_duration_menu,
-    post_video_gen_kb
+    post_video_gen_kb, image_size_menu
 )
 from database.models import User
 from model_config import MODEL_CATALOG
@@ -40,6 +40,16 @@ SIZE_PROMPTS = {
     "2:3": " --ar 2:3",
     "3:2": " --ar 3:2"
 }
+
+# Маппинг размеров для GPT Image API (реальные пиксели)
+GPT_IMAGE_SIZES = {
+    "1:1": "1024x1024",
+    "2:3": "1024x1536",
+    "3:2": "1536x1024",
+}
+
+# Модели, поддерживающие выбор размера через API (не через промпт)
+SIZE_API_MODELS = {"openai/gpt-5.4-image-2", "openai/gpt-5-image", "openai/gpt-5-image-mini"}
 
 STYLE_PROMPTS = {
     "Anime 🌸": ", anime style, vibrant, detailed illustration, by Makoto Shinkai, studio ghibli",
@@ -390,15 +400,22 @@ async def regen_model_handler(callback: CallbackQuery, state: FSMContext, sessio
             reply_markup=video_format_menu()
         )
     elif category in ["gen_image", "gen_nano_banana"]:
-        await state.set_state(GenState.waiting_for_input)
-        prompt_hint = ""
-        if preserved_prompt:
-            prompt_hint = f"\n\n💡 <i>У вас есть сохранённый промпт — просто отправьте /use или скопируйте:</i>\n<code>{preserved_prompt[:300]}</code>"
-        await callback.message.answer(
-            f"🔄 <b>Снова: {name}</b>\n\nОтправьте промпт (и фото при необходимости):{prompt_hint}",
-            parse_mode="HTML",
-            reply_markup=back_to_menu_kb()
-        )
+        if category == "gen_image" and model_id in SIZE_API_MODELS:
+            await callback.message.answer(
+                f"🔄 <b>Снова: {name}</b>\n\nВыберите формат изображения:",
+                parse_mode="HTML",
+                reply_markup=image_size_menu()
+            )
+        else:
+            await state.set_state(GenState.waiting_for_input)
+            prompt_hint = ""
+            if preserved_prompt:
+                prompt_hint = f"\n\n💡 <i>У вас есть сохранённый промпт — просто отправьте /use или скопируйте:</i>\n<code>{preserved_prompt[:300]}</code>"
+            await callback.message.answer(
+                f"🔄 <b>Снова: {name}</b>\n\nОтправьте промпт (и фото при необходимости):{prompt_hint}",
+                parse_mode="HTML",
+                reply_markup=back_to_menu_kb()
+            )
     else:
         await state.set_state(GenState.waiting_for_input)
         await callback.message.answer(
@@ -441,8 +458,18 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
     desc_text = f"\nℹ️ <i>{description}</i>\n" if description else ""
     
     if category in ["gen_image", "gen_nano_banana"]:
-        # Сразу в режим ввода без выбора размеров/стилей
-        await state.update_data(ratio="1:1", size_prompt="", style_prompt="", style="Без стиля")
+        # Модели, поддерживающие выбор размера через API
+        if category == "gen_image" and model_id in SIZE_API_MODELS:
+            # Показываем меню выбора размера
+            await callback.message.answer(
+                f"✅ Выбрана: <b>{name}</b>{desc_text}\n\nВыберите <b>формат изображения</b>:",
+                parse_mode="HTML",
+                reply_markup=image_size_menu()
+            )
+            await callback.answer()
+            return
+        # Остальные модели — сразу в режим ввода без выбора размеров/стилей
+        await state.update_data(ratio="1:1", size_prompt="", style_prompt="", style="Без стиля", image_size=None)
         text = f"✅ Выбрана: <b>{name}</b>{desc_text}\n\nОтправьте промпт (и фото-референс при необходимости):"
         await state.set_state(GenState.waiting_for_input)
         await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
@@ -488,6 +515,45 @@ async def set_size(cb: CallbackQuery, state: FSMContext):
     await state.update_data(ratio=ratio, size_prompt=size_prompt)
     await show_styles_page(cb, state, page=0)
     await cb.answer()
+
+@router.callback_query(F.data.startswith("isize:"))
+async def set_image_size_handler(callback: CallbackQuery, state: FSMContext):
+    """Выбор размера для GPT Image моделей."""
+    ratio = callback.data.split(":", 1)[1]
+    api_size = GPT_IMAGE_SIZES.get(ratio, "1024x1024")
+    await state.update_data(
+        ratio=ratio,
+        size_prompt="",
+        style_prompt="",
+        style="Без стиля",
+        image_size=api_size
+    )
+    data = await state.get_data()
+    name = data.get("current_model_name", "Модель")
+    
+    try:
+        await callback.message.edit_text(
+            f"✅ Размер <b>{ratio}</b> ({api_size}) установлен!\n"
+            f"Модель: <b>{name}</b>\n\n"
+            "✍️ Отправьте промпт (и фото-референс при необходимости):",
+            parse_mode="HTML",
+            reply_markup=back_to_menu_kb()
+        )
+    except Exception:
+        try:
+            await callback.message.delete()
+        except:
+            pass
+        await callback.message.answer(
+            f"✅ Размер <b>{ratio}</b> ({api_size}) установлен!\n"
+            f"Модель: <b>{name}</b>\n\n"
+            "✍️ Отправьте промпт (и фото-референс при необходимости):",
+            parse_mode="HTML",
+            reply_markup=back_to_menu_kb()
+        )
+    
+    await state.set_state(GenState.waiting_for_input)
+    await callback.answer()
 
 @router.callback_query(F.data.startswith("stylepage_"))
 async def style_page_handler(cb: CallbackQuery, state: FSMContext):

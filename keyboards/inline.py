@@ -89,6 +89,20 @@ def video_prompt_duration_menu() -> InlineKeyboardMarkup:
     ])
 
 
+def image_size_menu() -> InlineKeyboardMarkup:
+    """Выбор размера изображения для GPT Image моделей."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="1:1 (квадрат)", callback_data="isize:1:1", style="primary"),
+            InlineKeyboardButton(text="2:3 (портрет)", callback_data="isize:2:3", style="primary"),
+        ],
+        [
+            InlineKeyboardButton(text="3:2 (альбом)", callback_data="isize:3:2", style="primary"),
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
+    ])
+
+
 def video_format_menu() -> InlineKeyboardMarkup:
     """Выбор формата видео."""
     return InlineKeyboardMarkup(inline_keyboard=[

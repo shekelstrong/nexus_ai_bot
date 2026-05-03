@@ -606,8 +606,14 @@ async def run_image_generation(
 
     api = APIClient()
 
+    # Получаем размер из state (для моделей с поддержкой API-размера)
+    image_size = None
+    if state:
+        state_data = await state.get_data()
+        image_size = state_data.get("image_size")
+
     try:
-        res = await api.generate_image(model_info["id"], prompt, reference_images=reference_images)
+        res = await api.generate_image(model_info["id"], prompt, reference_images=reference_images, size=image_size)
 
         if not res:
             raise Exception("Ошибка генерации изображения")
