@@ -54,7 +54,8 @@ class APIClient:
         self,
         model: str,
         prompt: str,
-        reference_images: Optional[List[str]] = None
+        reference_images: Optional[List[str]] = None,
+        size: Optional[str] = None
     ) -> Optional[Union[str, BufferedInputFile]]:
         """
         Генерация изображения с поддержкой референсов.
@@ -63,6 +64,7 @@ class APIClient:
             model: ID модели
             prompt: Текстовый промпт
             reference_images: Список URL/base64 референсов (до 3)
+            size: Размер изображения (например "1024x1024", "1024x1536", "1536x1024")
         """
         if reference_images is None:
             reference_images = []
@@ -73,7 +75,7 @@ class APIClient:
             return await self.seedream_gen.generate(model, prompt, reference_images)
 
         # Все остальные модели (Flux, Gemini Image, и т.д.)
-        return await self.std_image_gen.generate(model, prompt, reference_images)
+        return await self.std_image_gen.generate(model, prompt, reference_images, size=size)
 
 
     async def generate_video(
