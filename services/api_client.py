@@ -94,21 +94,29 @@ class APIClient:
 
         logger.info(f"APIClient: Запрос видео-генерации. Модель: {model}, Image: {bool(image_url)}")
 
+        # Поддержка суффикса ::N для фиксированной длительности (Seedance 5s/10s)
+        actual_model = model
+        if "::" in model:
+            base, dur = model.rsplit("::", 1)
+            actual_model = base
+            if "duration" not in extra_params:
+                extra_params["duration"] = dur
+
         if "seedance" in model_lower:
-            return await self.kling_gen.generate(model, prompt, image_url, extra_params)
+            return await self.kling_gen.generate(actual_model, prompt, image_url, extra_params)
 
         if "kling" in model_lower:
-            return await self.kling_gen.generate(model, prompt, image_url, extra_params)
+            return await self.kling_gen.generate(actual_model, prompt, image_url, extra_params)
             
         if "veo" in model_lower:
-            return await self.veo_gen.generate(model, prompt, image_url, extra_params)
+            return await self.veo_gen.generate(actual_model, prompt, image_url, extra_params)
             
         if "wan" in model_lower:
-            return await self.wan_gen.generate(model, prompt, image_url, extra_params)
+            return await self.wan_gen.generate(actual_model, prompt, image_url, extra_params)
             
         # Fallback (например Luma, если она работает через Wan API или похожий)
         if "luma" in model_lower:
-             return await self.wan_gen.generate(model, prompt, image_url, extra_params) 
+             return await self.wan_gen.generate(actual_model, prompt, image_url, extra_params) 
 
         logger.warning(f"APIClient: Неизвестная модель видео '{model}'. Пробую wan_gen как дефолт.")
-        return await self.wan_gen.generate(model, prompt, image_url, extra_params)
+        return await self.wan_gen.generate(actual_model, prompt, image_url, extra_params)

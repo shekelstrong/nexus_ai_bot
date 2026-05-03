@@ -103,7 +103,8 @@ MODEL_CATALOG = {
                 {"id": "fal-ai/kling-video/v2.6/pro/image-to-video", "name": "Kling 2.6", "cost": 35, "description": "Оживляет любую вашу фотографию. Отправьте 1 фото."},
                 {"id": "fal-ai/veo3.1/image-to-video", "name": "Veo 3.1 (по 1 фото)", "cost": 30, "description": "Оживляет статичные картинки с естественной физикой Google. Отправьте 1 фото."},
                 {"id": "fal-ai/veo3.1/first-last-frame-to-video", "name": "Veo 3.1 (по 2 фото)", "cost": 30, "description": "Магия переходов: отправьте начальный и конечный кадр, нейросеть додумает видео между ними."},
-                {"id": "bytedance/seedance-2.0/image-to-video", "name": "Seedance 2.0", "cost": 100, "description": "Премиум генерация видео из фото. Анимирует синхронным звуком, управление начальным/конечным кадром."},
+                {"id": "bytedance/seedance-2.0/image-to-video::5", "name": "Seedance 2.0 (5 сек)", "cost": 70, "description": "Премиум генерация видео из фото (5 сек). Анимирует синхронным звуком.", "default_duration": "5"},
+                {"id": "bytedance/seedance-2.0/image-to-video::10", "name": "Seedance 2.0 (10 сек)", "cost": 100, "description": "Премиум генерация видео из фото (10 сек). Анимирует синхронным звуком, управление начальным/конечным кадром.", "default_duration": "10"},
             ]
         },
         # Подраздел “Видео по образцу” (motion-control)

@@ -235,8 +235,16 @@ async def process_platega_payment(
         return False
     
     item_type = parts[0]  # tokens, tier
-    item_id = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
     user_telegram_id = int(parts[-1])  # Последний элемент - telegram_id
+    
+    if len(parts) == 3:
+        # tokens_50_12345 → item_id=tokens_50; tier_BASIC_12345 → item_id=BASIC
+        if item_type == "tokens":
+            item_id = f"{parts[0]}_{parts[1]}"
+        else:
+            item_id = parts[1]
+    else:
+        item_id = "_".join(parts[1:-1])
     
     # Находим пользователя
     res = await session.execute(select(User).where(User.telegram_id == user_telegram_id))

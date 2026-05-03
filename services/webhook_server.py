@@ -127,7 +127,11 @@ class WebhookServer:
             user_telegram_id = int(parts[-1])
             
             if len(parts) == 3:
-                item_id = parts[1]
+                # tokens_50_12345 → item_type=tokens, item_id=tokens_50
+                if item_type == "tokens":
+                    item_id = f"{parts[0]}_{parts[1]}"
+                else:
+                    item_id = parts[1]
             else:
                 item_id = "_".join(parts[1:-1])
             
@@ -185,7 +189,7 @@ class WebhookServer:
                     await self.bot.send_message(
                         referrer.telegram_id,
                         f"💸 <b>Реферальное начисление!</b>\n\n"
-                        f"Ваш реферал (ID: {user_telegram_id}) пополнил баланс.\n"
+                        f"Ваш реферал пополнил баланс.\n"
                         f"Вам начислено: <b>+{bonus:.2f}₽</b> ({level} уровень, {bonus_percent*100:.0f}%)\n\n"
                         f"Реферальный баланс: {referrer.referral_balance}₽",
                         parse_mode="HTML"

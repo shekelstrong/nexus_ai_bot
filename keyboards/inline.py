@@ -14,11 +14,8 @@ def main_menu() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🎥 Видео", callback_data="cat:gen_video", style="primary")
         ],
         [
-            InlineKeyboardButton(text="✏️ Промпт", callback_data="cat:gen_prompt", style="primary")
-        ],
-        [
             InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
-            InlineKeyboardButton(text="💎 Подписка", callback_data="subscriptions", style="success")
+            InlineKeyboardButton(text="💎 Токены", callback_data="subscriptions", style="success")
         ],
         [
             InlineKeyboardButton(text="📊 История", callback_data="history"),
