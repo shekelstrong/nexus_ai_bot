@@ -172,8 +172,13 @@ class StandardTextGenerator:
         # Объединяем историю с текущим сообщением
         full_messages = history + messages
 
-        # Фильтруем сообщения с пустым content
-        full_messages = [m for m in full_messages if m.get("content") and m["content"].strip()]
+        # Фильтруем сообщения с пустым content (поддержка multimodal — content может быть list)
+        def _has_content(m):
+            c = m.get("content")
+            if isinstance(c, list):
+                return bool(c)
+            return bool(c and c.strip())
+        full_messages = [m for m in full_messages if _has_content(m)]
 
         headers = {
             "Authorization": f"Bearer {self.key}",

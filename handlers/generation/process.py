@@ -81,24 +81,38 @@ async def handle_prompt_image(message: Message, state: FSMContext, session: Asyn
 
         if prompt_mode == "image":
             system = (
-                "Ты эксперт по созданию промптов для генерации изображений. "
-                "Опиши детально сцену: объекты, стиль, освещение, цвета, атмосферу, композицию. "
-                "Генерируй промпт на английском для использования в Midjourney, Flux, Stable Diffusion или аналогичных инструментах."
+                "You are an expert at creating detailed image generation prompts. "
+                "Analyze the provided reference image with extreme precision and fidelity. "
+                "Describe EXACTLY what you see — do NOT invent, add, or imagine anything that is not in the image. "
+                "Include: objects, subjects, poses, facial expressions, clothing, style, art medium, "
+                "lighting (direction, color, intensity), color palette, composition (framing, angle, depth of field), "
+                "background details, textures, mood/atmosphere, and any text visible in the image. "
+                "Output ONLY the prompt in English, ready to use in Midjourney, Flux, or Stable Diffusion. "
+                "Do not include any explanations or commentary — just the prompt itself."
             )
-            user_msg = f"[Image] Создай подробный промпт для генерации изображения по этому референсу: {image_url}"
+            text_instruction = "Create a detailed image generation prompt based on this reference image. Describe exactly what you see, nothing more, nothing less."
         else:
             system = (
-                f"Ты эксперт по созданию промптов для видеогенерации. "
-                f"Опиши движение, действие, атмосферу, освещение, стиль для видео на {video_duration} секунд. "
-                "Генерируй промпт на английском для использования в Kling, Veo или аналогичных видеомоделях."
-            )
-            user_msg = f"[Image] Создай подробный промпт для видео ({video_duration} секунд) по этому референсу: {image_url}"
+                f"You are an expert at creating video generation prompts. "
+                "Analyze the provided reference image with extreme precision and fidelity. "
+                "Describe EXACTLY what you see — do NOT invent, add, or imagine anything that is not in the image. "
+                "Then describe natural movement, action, and atmosphere for a {duration}-second video. "
+                "Include: scene description, camera movement, subject motion, lighting changes, "
+                "style, mood, and temporal progression. "
+                "Output ONLY the prompt in English, ready to use in Kling, Veo, or similar video models. "
+                "Do not include any explanations or commentary — just the prompt itself."
+            ).replace("{duration}", str(video_duration))
+            text_instruction = f"Create a detailed video generation prompt ({video_duration}s) based on this reference image. Describe exactly what you see and how it should come to life in motion."
+
+        # Формируем multimodal content (OpenRouter стандарт для vision моделей)
+        image_content = {"type": "image_url", "image_url": {"url": image_url}}
+        text_content = {"type": "text", "text": text_instruction}
 
         messages = [
             {"role": "system", "content": system},
-            {"role": "user", "content": user_msg}
+            {"role": "user", "content": [image_content, text_content]}
         ]
-        result = await api.generate_text("anthropic/claude-haiku-4.5", messages)
+        result = await api.generate_text("google/gemini-3.1-pro-preview", messages)
 
         await status_msg.delete()
         if result:
