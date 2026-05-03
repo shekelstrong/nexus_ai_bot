@@ -1,3 +1,4 @@
+import html
 import os
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
@@ -202,10 +203,12 @@ async def use_generated_prompt_handler(callback: CallbackQuery, state: FSMContex
         return
     
     # Промпт сохранён, предлагаем выбрать категорию/модель
+    safe_prompt = html.escape(saved_prompt[:200])
+    ellipsis = "..." if len(saved_prompt) > 200 else ""
     await _send_menu(
         callback,
         "<b>Промпт сохранён! ✅</b>\n\n"
-        f"Ваш промпт: <code>{saved_prompt[:200]}{'...' if len(saved_prompt) > 200 else ''}</code>\n\n"
+        f"Ваш промпт: <code>{safe_prompt}{ellipsis}</code>\n\n"
         "Теперь выберите модель для генерации:",
         main_menu(),
         img_path=None
@@ -410,7 +413,8 @@ async def regen_model_handler(callback: CallbackQuery, state: FSMContext, sessio
             await state.set_state(GenState.waiting_for_input)
             prompt_hint = ""
             if preserved_prompt:
-                prompt_hint = f"\n\n💡 <i>У вас есть сохранённый промпт — просто отправьте /use или скопируйте:</i>\n<code>{preserved_prompt[:300]}</code>"
+                safe_preview = html.escape(preserved_prompt[:300])
+                prompt_hint = f"\n\n💡 <i>У вас есть сохранённый промпт — просто отправьте /use или скопируйте:</i>\n<code>{safe_preview}</code>"
             await callback.message.answer(
                 f"🔄 <b>Снова: {name}</b>\n\nОтправьте промпт (и фото при необходимости):{prompt_hint}",
                 parse_mode="HTML",
@@ -441,11 +445,19 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
     category = info.get("category", "gen_text")
     family = info.get("family", "")
     description = info.get("description", "")
-    
+
+    # Сохраняем saved_prompt перед очисткой state, чтобы поток
+    # «Сгенерировать промпт → Использовать промпт → выбрать модель → /use»
+    # не терял промпт. Поведение совпадает с back_to_menu_handler/regen_model_handler.
+    state_data = await state.get_data()
+    preserved_prompt = state_data.get("saved_prompt", "")
+
     await state.clear()
-    
+
     # Сохраняем данные модели, чтобы показать их на следующем шаге (выборе стиля)
     await state.update_data(current_model_name=name, current_model_desc=description)
+    if preserved_prompt:
+        await state.update_data(saved_prompt=preserved_prompt)
     
     try:
         if callback.message.photo or callback.message.video or callback.message.document:

@@ -125,7 +125,7 @@ async def handle_prompt_image(message: Message, state: FSMContext, session: Asyn
                 [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_to_menu", style="success")]
             ])
             await message.answer(
-                f"✨ <b>Готовый промпт:</b>\n\n<code>{result[:3500]}</code>",
+                f"✨ <b>Готовый промпт:</b>\n\n<code>{_safe_html(result, 3500)}</code>",
                 parse_mode="HTML",
                 reply_markup=kb
             )
