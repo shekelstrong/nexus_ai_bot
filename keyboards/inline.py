@@ -6,12 +6,15 @@ def main_menu() -> InlineKeyboardMarkup:
     """Главное меню бота."""
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
+            InlineKeyboardButton(text="🍌 Nano Banana", callback_data="cat:gen_nano_banana", style="success"),
+        ],
+        [
             InlineKeyboardButton(text="🤖 Текст", callback_data="cat:gen_text", style="primary"),
             InlineKeyboardButton(text="🎨 Изображения", callback_data="cat:gen_image", style="primary")
         ],
         [
-            InlineKeyboardButton(text="🍌 Nano Banana", callback_data="cat:gen_nano_banana", style="primary"),
-            InlineKeyboardButton(text="🎥 Видео", callback_data="cat:gen_video", style="primary")
+            InlineKeyboardButton(text="🎥 Видео", callback_data="cat:gen_video", style="primary"),
+            InlineKeyboardButton(text="✏️ Промпт", callback_data="cat:gen_prompt", style="primary")
         ],
         [
             InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
