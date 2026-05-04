@@ -96,13 +96,15 @@ class APIClient:
 
         logger.info(f"APIClient: Запрос видео-генерации. Модель: {model}, Image: {bool(image_url)}")
 
-        # Поддержка суффикса ::N для фиксированной длительности (Seedance 5s/10s)
+        # Поддержка суффикса ::N для фиксированной длительности (Seedance 5s/10s).
+        # Суффикс задаёт цену пакета (70/100 токенов), поэтому он должен
+        # ВСЕГДА перекрывать значение duration, переданное из process.py
+        # (которое по умолчанию = "5" для всех видео-моделей).
         actual_model = model
         if "::" in model:
             base, dur = model.rsplit("::", 1)
             actual_model = base
-            if "duration" not in extra_params:
-                extra_params["duration"] = dur
+            extra_params["duration"] = dur  # фиксированная длительность всегда побеждает
 
         if "seedance" in model_lower:
             return await self.kling_gen.generate(actual_model, prompt, image_url, extra_params)
