@@ -9,13 +9,11 @@ from .base import BaseProvider
 
 class OpenRouterProvider(BaseProvider):
     def __init__(self):
-        self.api_key = settings.OPENROUTER_API_KEY
-        self.chat_url = "https://openrouter.ai/api/v1/chat/completions"
+        self.api_key = settings.POLZA_AI_API_KEY
+        self.chat_url = "https://polza.ai/api/v1/chat/completions"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": settings.WEBHOOK_URL or "https://t.me/NexusAIBot",
-            "X-Title": "NexusAI",
         }
 
     async def generate_text(self, model: str, messages: List[Dict[str, str]], **kwargs) -> Optional[str]:

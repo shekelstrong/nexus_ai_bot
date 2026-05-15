@@ -17,8 +17,8 @@ class StandardTextGenerator:
     MAX_HISTORY_MESSAGES = 20
 
     def __init__(self):
-        self.url = "https://openrouter.ai/api/v1/chat/completions"
-        self.key = settings.OPENROUTER_API_KEY
+        self.url = "https://polza.ai/api/v1/chat/completions"
+        self.key = settings.POLZA_AI_API_KEY
 
     async def _load_history(
         self,
@@ -183,8 +183,6 @@ class StandardTextGenerator:
         headers = {
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": settings.WEBHOOK_URL or "https://t.me/NexusAIBot",
-            "X-Title": "NexusAI",
         }
 
         payload = {
@@ -198,12 +196,7 @@ class StandardTextGenerator:
         if any(x in model for x in ["reasoning", "r1", "o1", "o3"]):
             payload["include_reasoning"] = True
 
-        # Если модель Perplexity с поиском — добавляем флаги
-        if "perplexity" in model.lower() and ("search" in model.lower() or "sonar" in model.lower()):
-            payload["extra_body"] = {
-                "use_context": True,
-                "search_depth": "high" if "pro" in model.lower() else "standard"
-            }
+
 
         # Логирование для отладки
         logger.info(f"Text Gen: model={model}, messages_count={len(full_messages)}")

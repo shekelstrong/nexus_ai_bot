@@ -12,8 +12,8 @@ class SeedreamGenerator:
     Поддерживает текстовый промпт и до 3 референсов.
     """
     def __init__(self):
-        self.url = "https://openrouter.ai/api/v1/chat/completions"
-        self.key = settings.OPENROUTER_API_KEY
+        self.url = "https://polza.ai/api/v1/chat/completions"
+        self.key = settings.POLZA_AI_API_KEY
 
     async def generate(
         self,

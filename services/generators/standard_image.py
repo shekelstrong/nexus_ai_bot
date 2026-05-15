@@ -14,8 +14,8 @@ class StandardImageGenerator:
     Поддерживает текстовый промпт и до 3 референсов.
     """
     def __init__(self):
-        self.api_key = settings.OPENROUTER_API_KEY
-        self.url = "https://openrouter.ai/api/v1/chat/completions"
+        self.api_key = settings.POLZA_AI_API_KEY
+        self.url = "https://polza.ai/api/v1/chat/completions"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -168,7 +168,7 @@ class StandardImageGenerator:
         safe_prompt = (prompt or "").strip() or "A beautiful creative image"
         try:
             timeout = aiohttp.ClientTimeout(total=300, sock_connect=60)
-            chat_url = "https://openrouter.ai/api/v1/chat/completions"
+            chat_url = "https://polza.ai/api/v1/chat/completions"
 
             content_parts = []
             for img_url in (reference_images or [])[:3]:

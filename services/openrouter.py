@@ -8,13 +8,11 @@ async def generate_text(model: str, prompt: str) -> str:
     """
     Генерация текста через OpenRouter API.
     """
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    url = "https://polza.ai/api/v1/chat/completions"
     
     headers = {
-        "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {settings.POLZA_AI_API_KEY}",
         "Content-Type": "application/json",
-        # "HTTP-Referer": settings.WEBHOOK_URL, # Опционально
-        # "X-Title": "NexusAI Bot", # Опционально
     }
     
     data = {
