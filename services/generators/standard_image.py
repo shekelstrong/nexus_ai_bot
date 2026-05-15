@@ -11,7 +11,7 @@ class StandardImageGenerator:
     """
     Генератор для стандартных image-моделей через OpenRouter (Gemini, DALL-E, и др.),
     кроме Seedream (у него свой класс).
-    Поддерживает текстовый промпт и до 3 референсов.
+    Поддерживает текстовый промпт и до 10 референсов.
     """
     def __init__(self):
         self.api_key = settings.POLZA_AI_API_KEY
@@ -50,7 +50,7 @@ class StandardImageGenerator:
         content_parts = []
         
         # Добавляем референсы (изображения)
-        for img_url in reference_images[:3]:  # Максимум 3
+        for img_url in reference_images[:10]:  # Максимум 10
             # OpenRouter принимает и URL, и Base64 в одинаковом формате
             content_parts.append({
                 "type": "image_url",
@@ -171,7 +171,7 @@ class StandardImageGenerator:
             chat_url = "https://polza.ai/api/v1/chat/completions"
 
             content_parts = []
-            for img_url in (reference_images or [])[:3]:
+            for img_url in (reference_images or [])[:10]:
                 content_parts.append({"type": "image_url", "image_url": {"url": img_url}})
             content_parts.append({"type": "text", "text": safe_prompt})
 

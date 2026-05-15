@@ -9,7 +9,7 @@ from utils.logger import logger
 class SeedreamGenerator:
     """
     Генератор для Seedream (ByteDance) через OpenRouter.
-    Поддерживает текстовый промпт и до 3 референсов.
+    Поддерживает текстовый промпт и до 10 референсов.
     """
     def __init__(self):
         self.url = "https://polza.ai/api/v1/chat/completions"
@@ -33,7 +33,7 @@ class SeedreamGenerator:
         content_parts = []
         
         # Добавляем референсы (изображения) - максимум 3
-        for img_url in reference_images[:3]:
+        for img_url in reference_images[:10]:
             content_parts.append({
                 "type": "image_url",
                 "image_url": {"url": img_url}

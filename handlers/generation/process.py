@@ -280,7 +280,7 @@ async def _process_album_task(message: Message, state: FSMContext, session: Asyn
             elif msg.text and not album_prompt:
                 album_prompt = msg.text
 
-        reference_images = album_photos[:3]
+        reference_images = album_photos[:10]
         prompt = album_prompt or ""
 
         data = await state.get_data()
