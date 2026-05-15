@@ -8,7 +8,7 @@ API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
 async def test_gemini():
     print("--- TESTING GEMINI (NANO BANANA) ---")
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    url = "https://polza.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
@@ -31,7 +31,7 @@ async def test_gemini():
 
 async def test_dalle():
     print("\n--- TESTING OPENAI IMAGE (DALL-E) ---")
-    url = "https://openrouter.ai/api/v1/images/generations"
+    url = "https://polza.ai/api/v1/images/generations"
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",

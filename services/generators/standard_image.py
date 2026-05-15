@@ -130,14 +130,14 @@ class StandardImageGenerator:
                         url_match = re.search(r'\[.*?\]\((https?://[^\)]+)\)', content)
                         if url_match:
                             url = url_match.group(1)
-                            if 'openrouter.ai' not in url and 'settings' not in url:
+                            if 'settings' not in url:
                                 return url
                         
                         # Ищем простой URL
                         url_simple = re.search(r'(https?://[^\s\]>"]+)', content)
                         if url_simple:
                             url = url_simple.group(1)
-                            if 'openrouter.ai' not in url and 'settings' not in url:
+                            if 'settings' not in url:
                                 return url
 
                         # Если контент короткий и не содержит ошибок - возвращаем как текст
