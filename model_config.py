@@ -74,7 +74,7 @@ MODEL_CATALOG = {
         },
         "seedream": {
             "models": [
-                {"id": "bytedance-seed/seedream-4.5", "name": "Seedream 4.5", "cost": 3, "description": "Нейросеть от создателей TikTok. Яркие, сочные цвета и отличная стилизация."},
+                {"id": "bytedance/seedream-4.5", "name": "Seedream 4.5", "cost": 3, "description": "Нейросеть от создателей TikTok. Яркие, сочные цвета и отличная стилизация."},
             ]
         },
         "gemini_image": {
