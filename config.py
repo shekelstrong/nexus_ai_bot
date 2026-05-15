@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # API Keys
     OPENROUTER_API_KEY: str
     FAL_AI_API_KEY: str
+    POLZA_AI_API_KEY: str
 
     # Webhook
     BASE_URL: str = "https://your-domain.com"

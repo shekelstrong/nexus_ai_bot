@@ -204,12 +204,12 @@ def model_families_menu(category: str) -> InlineKeyboardMarkup:
         "free": "Бесплатные",
         "seedream": "Seedream",
         "gemini_image": "GPT Images",
-        "fal_ai_image": "Midjourney & Flux",
+        "fal_ai_image": "Flux & SD",
         "other_image": "Другие",
         "kling": "Kling AI",
         "veo": "Google Veo",
         "wan": "Wan Video",
-        "fal_ai_video": "FAL AI Video",
+        "fal_ai_video": "Polza Video",
         "perplexity": "Perplexity",
         "google_search": "Google Search"
     }

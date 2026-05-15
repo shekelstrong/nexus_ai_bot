@@ -17,7 +17,7 @@ from keyboards.inline import main_menu, back_to_menu_kb, post_generation_kb
 from utils.logger import logger
 from model_config import MODEL_CATALOG
 from states.generation_states import GenState
-from services.fal_ai import upload_file_to_fal
+from services.polza_ai import upload_file as upload_file_to_fal
 
 
 def _safe_html(text: str, max_len: int = 3900) -> str:
@@ -472,7 +472,7 @@ async def run_complex_generation(
         res_url_raw = await api.generate_video(model_id, prompt, image_url=first_url, extra_params=extra)
 
         if not res_url_raw:
-            raise Exception("Генерация не вернула результат (ошибка FAL AI)")
+            raise Exception("Генерация не вернула результат (ошибка генерации)")
 
         res_url = normalize_url(res_url_raw)
         if not res_url:
@@ -789,7 +789,7 @@ async def _get_file_url_or_base64(bot, file_id, is_video=False):
     if is_video:
         telegram_url = f"https://api.telegram.org/file/bot{bot.token}/{file.file_path}"
         safe_url = telegram_url.replace(bot.token, "***")
-        logger.info(f"Video URL: {safe_url}. Downloading and uploading to FAL Storage...")
+        logger.info(f"Video URL: {safe_url}. Downloading and uploading to Polza Storage...")
         
         try:
             file_bytes_io = await bot.download_file(file.file_path)
@@ -802,7 +802,7 @@ async def _get_file_url_or_base64(bot, file_id, is_video=False):
                 logger.info(f"Video successfully uploaded to FAL Storage: {url}")
                 return url
             else:
-                logger.warning("Failed to upload video to FAL Storage, falling back to Telegram URL")
+                logger.warning("Failed to upload video to Polza Storage, falling back to Telegram URL")
         except Exception as e:
             logger.error(f"Error downloading/uploading video to FAL: {e}")
             
