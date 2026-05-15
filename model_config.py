@@ -59,9 +59,9 @@ MODEL_CATALOG = {
         "flux": {
             "models": [
                 {"id": "black-forest-labs/flux.2-pro", "name": "Flux 2.0 Pro", "cost": 4, "description": "Лучшая модель для фотореализма. Идеально рисует лица, пальцы и понимает текст на картинках."},
-                {"id": "black-forest-labs/flux.2-max", "name": "Flux 2.0 Max", "cost": 4, "description": "Максимальная детализация. Для сложных артов с обилием мелких объектов."},
+                {"id": "black-forest-labs/flux.2-pro", "name": "Flux 2.0 Max", "cost": 4, "description": "Максимальная детализация. Для сложных артов с обилием мелких объектов."},
                 {"id": "black-forest-labs/flux.2-flex", "name": "Flux 2.0 Flex", "cost": 2, "description": "Сбалансированная версия Flux. Рисует быстро и качественно."},
-                {"id": "black-forest-labs/flux.2-klein-4b", "name": "Flux 2.0 Klein", "cost": 1, "description": "Самая быстрая и легкая версия Flux для черновиков и набросков."},
+                {"id": "black-forest-labs/flux.2-flex", "name": "Flux 2.0 Klein", "cost": 1, "description": "Самая быстрая и легкая версия Flux для черновиков и набросков."},
                 {"id": "black-forest-labs/flux.2-flex", "name": "Stable Diffusion v3.5 Large", "cost": 3, "description": "Легендарная классика в обновленном виде. Широкие возможности стилизации."},
             ]
         },
