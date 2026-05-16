@@ -101,7 +101,7 @@ MODEL_CATALOG = {
         "video_from_photo": {
             "models": [
                 {"id": "kling/v3", "name": "Kling 3.0", "cost": 35, "description": "Новейшая Kling 3.0 — 15 сек, sound, std/pro. Отправьте 1 фото."},
-                {"id": "kling/v2.6", "name": "Kling 2.6", "cost": 35, "description": "Оживляет любую вашу фотографию. Отправьте 1 фото."},
+                {"id": "kling/v2.5-turbo", "name": "Kling 2.5 Turbo", "cost": 35, "description": "Оживляет любую вашу фотографию. Отправьте 1 фото."},
                 {"id": "google/veo3", "name": "Veo 3.1 (по 1 фото)", "cost": 30, "description": "Оживляет статичные картинки с естественной физикой Google. Отправьте 1 фото."},
                 {"id": "google/veo3", "name": "Veo 3.1 (по 2 фото)", "cost": 30, "description": "Магия переходов: отправьте начальный и конечный кадр, нейросеть додумает видео между ними."},
                 {"id": "bytedance/seedance-2::5", "name": "Seedance 2.0 (5 сек)", "cost": 70, "description": "Премиум генерация видео из фото (5 сек). Анимирует синхронным звуком.", "default_duration": "5"},

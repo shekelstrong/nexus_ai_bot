@@ -59,6 +59,22 @@ class KlingGenerator:
         aspect_ratio = extra_params.get("aspect_ratio", "16:9")
         duration = extra_params.get("duration", "5")
 
+        # Kling 3.0 — требует mode и sound
+        if "v3" in model_lower and "v2" not in model_lower:
+            payload = {
+                "prompt": prompt or "High quality video",
+                "aspect_ratio": aspect_ratio,
+                "duration": duration,
+                "mode": extra_params.get("mode", "std"),
+                "sound": extra_params.get("sound", "false"),
+            }
+            # Image-to-Video
+            if image_url:
+                return payload
+            # Text-to-Video (без фото)
+            return payload
+
+        # Kling 2.5 и старше — с cfg_scale
         # Image-to-Video
         if "image-to" in model_lower or "img2vid" in model_lower:
             if not image_url:

@@ -264,7 +264,7 @@ async def generate_video(
         else:
             payload["images"].append({"type": "url", "data": second_url})
     if "cfg_scale" in extra_params:
-        payload["guidance_scale"] = extra_params["cfg_scale"]
+        payload["cfg_scale"] = extra_params["cfg_scale"]
     if "video_url" in extra_params:
         # Motion control reference video — определяем тип автоматически
         video_ref_url = extra_params["video_url"]
@@ -274,6 +274,12 @@ async def generate_video(
             payload["images"].append({"type": "base64", "data": video_ref_url})
         else:
             payload["images"].append({"type": "url", "data": video_ref_url})
+
+    # Параметры, которые обработаны выше (не копировать повторно)
+    _handled = {"aspect_ratio", "duration", "cfg_scale", "second_image_url", "video_url"}
+    for k, v in extra_params.items():
+        if k not in _handled and k not in payload:
+            payload[k] = v
 
     logger.info(f"Polza Video: model={model}, image={bool(image_url)}, params={list(payload.keys())}")
 

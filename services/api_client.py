@@ -77,6 +77,9 @@ class APIClient:
 
         logger.info(f"APIClient: Polza Video. Model: {model}, Image: {bool(image_url)}")
 
+        # Компакт-маппинг: старые model_id из БД → актуальные для Polza
+        model = {"kling/v2.6": "kling/v2.5-turbo"}.get(model, model)
+
         # Поддержка суффикса ::N для фиксированной длительности
         actual_model = model
         if "::" in model:
