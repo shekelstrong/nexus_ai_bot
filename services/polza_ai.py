@@ -14,7 +14,6 @@ from aiogram.types import BufferedInputFile
 
 from config import settings
 from utils.logger import logger
-from utils.headers import get_headers as _headers
 
 # Отслеживание активных поллов для восстановления после рестарта
 import json
