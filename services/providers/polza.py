@@ -34,7 +34,7 @@ class PolzaProvider(BaseProvider):
             async with aiohttp.ClientSession() as session:
                 async with session.post(self.chat_url, headers=self.headers, json=payload) as resp:
                     if resp.status != 200:
-                        logger.error(f"Polza Text Error {resp.status}: {await resp.text()[:200]}")
+                        logger.error(f"Polza Text Error {resp.status}: {(await resp.text())[:200]}")
                         return None
                     data = await resp.json()
                     return data["choices"][0]["message"]["content"]
@@ -55,7 +55,7 @@ class PolzaProvider(BaseProvider):
             async with aiohttp.ClientSession() as session:
                 async with session.post(self.image_url, headers=self.headers, json=payload) as resp:
                     if resp.status != 200:
-                        logger.error(f"Polza Image Error {resp.status}: {await resp.text()[:200]}")
+                        logger.error(f"Polza Image Error {resp.status}: {(await resp.text())[:200]}")
                         return None
                     data = await resp.json()
                     if data.get("data") and len(data["data"]) > 0:
@@ -86,7 +86,7 @@ class PolzaProvider(BaseProvider):
                 # Submit
                 async with session.post(self.media_url, headers=self.headers, json=payload) as resp:
                     if resp.status not in (200, 201):
-                        logger.error(f"Polza Video Error {resp.status}: {await resp.text()[:200]}")
+                        logger.error(f"Polza Video Error {resp.status}: {(await resp.text())[:200]}")
                         return None
                     result = await resp.json()
 
