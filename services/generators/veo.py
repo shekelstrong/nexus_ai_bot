@@ -35,8 +35,8 @@ class VeoGenerator:
                 prompt=safe_prompt,
                 image_url=image_url,
                 extra_params={"second_image_url": end_url},
-                poll_seconds=5,
-                max_wait_seconds=600,
+                poll_seconds=10,
+                max_wait_seconds=1800,
             )
 
         elif "image-to-video" in model_id or "reference-to-video" in model_id:
@@ -46,17 +46,18 @@ class VeoGenerator:
                 model=model_id,
                 prompt=safe_prompt,
                 image_url=image_url,
-                poll_seconds=5,
-                max_wait_seconds=600,
+                poll_seconds=10,
+                max_wait_seconds=1800,
             )
 
         else:
-            # Text-to-Video
+            # Image-to-Video если есть фото, иначе Text-to-Video
             aspect_ratio = extra_params.get("aspect_ratio", "16:9")
             return await generate_video(
                 model=model_id,
                 prompt=safe_prompt,
+                image_url=image_url,
                 extra_params={"aspect_ratio": aspect_ratio},
-                poll_seconds=5,
-                max_wait_seconds=600,
+                poll_seconds=10,
+                max_wait_seconds=1800,
             )

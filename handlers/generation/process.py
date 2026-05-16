@@ -259,7 +259,7 @@ async def _process_album_task(message: Message, state: FSMContext, session: Asyn
         model_info = ALL_MODELS[model_id]
         category = model_info.get("category", "gen_text")
 
-        if category not in ["gen_image", "gen_nano_banana"]:
+        if category not in ["gen_image", "gen_nano_banana", "gen_video"]:
             logger.info(f"Album: не изображение (category={category}), игнорируем")
             return
 
@@ -282,6 +282,75 @@ async def _process_album_task(message: Message, state: FSMContext, session: Asyn
 
         reference_images = album_photos[:10]
         prompt = album_prompt or ""
+
+        if category == "gen_video":
+            # Видео-альбом: первое фото как референс
+            await state.set_state(GenState.waiting_for_input)
+            if not reference_images:
+                await message.answer("❌ Для видео нужна фотография", parse_mode="HTML")
+                return
+
+            api = APIClient()
+            cost = model_info.get("cost", 1)
+            if user.tokens_balance < cost:
+                await message.answer(f"❌ Недостаточно токенов! Нужно {cost}.", parse_mode="HTML")
+                return
+            user.tokens_balance -= cost
+            await session.commit()
+
+            status_msg = await message.answer(
+                f"🎬 <b>{model_info['name']}</b>\nГенерирую видео...",
+                parse_mode="HTML"
+            )
+
+            try:
+                extra_params = {}
+                data = await state.get_data()
+                extra_params["aspect_ratio"] = data.get("video_ratio", "16:9")
+                extra_params["duration"] = data.get("video_duration", "5")
+
+                res = await api.generate_video(
+                    model_info["id"],
+                    prompt,
+                    image_url=reference_images[0],
+                    extra_params=extra_params,
+                )
+
+                if not res:
+                    raise Exception("Ошибка видео")
+
+                await status_msg.delete()
+
+                gen = Generation(
+                    user_id=user.id, model_name=model_info["id"],
+                    prompt=prompt, result="processing",
+                    status=GenerationStatus.COMPLETED, cost=cost,
+                )
+                session.add(gen)
+                await session.commit()
+
+                sent_msg = await message.answer_video(
+                    normalize_url(res),
+                    caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
+                    parse_mode="HTML",
+                    reply_markup=post_generation_kb(gen.id, model_id=model_info["id"]),
+                )
+
+                if sent_msg and sent_msg.video:
+                    gen.result = sent_msg.video.file_id
+                else:
+                    gen.result = str(res)
+                await session.commit()
+
+            except Exception as e:
+                logger.error(f"Album Video Gen Error: {e}")
+                user.tokens_balance += cost
+                await session.commit()
+                try:
+                    await status_msg.edit_text(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
+                except:
+                    await message.answer(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
+            return
 
         data = await state.get_data()
         size_prompt = data.get("size_prompt", "")

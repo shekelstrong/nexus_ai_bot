@@ -32,6 +32,6 @@ class WanGenerator:
             prompt=prompt,
             image_url=image_url,
             extra_params=payload,
-            poll_seconds=5,
-            max_wait_seconds=600,
+            poll_seconds=10,
+            max_wait_seconds=1800,
         )
