@@ -97,9 +97,10 @@ MODEL_CATALOG = {
     },
 
     "gen_video": {
-        # Подраздел “Видео по фото” (img2vid)
+        # Подраздел "Видео по фото" (img2vid)
         "video_from_photo": {
             "models": [
+                {"id": "kling/v3", "name": "Kling 3.0", "cost": 35, "description": "Новейшая Kling 3.0 — 15 сек, sound, std/pro. Отправьте 1 фото."},
                 {"id": "kling/v2.6", "name": "Kling 2.6", "cost": 35, "description": "Оживляет любую вашу фотографию. Отправьте 1 фото."},
                 {"id": "google/veo3", "name": "Veo 3.1 (по 1 фото)", "cost": 30, "description": "Оживляет статичные картинки с естественной физикой Google. Отправьте 1 фото."},
                 {"id": "google/veo3", "name": "Veo 3.1 (по 2 фото)", "cost": 30, "description": "Магия переходов: отправьте начальный и конечный кадр, нейросеть додумает видео между ними."},
@@ -107,7 +108,14 @@ MODEL_CATALOG = {
                 {"id": "bytedance/seedance-2::10", "name": "Seedance 2.0 (10 сек)", "cost": 100, "description": "Премиум генерация видео из фото (10 сек). Анимирует синхронным звуком, управление начальным/конечным кадром.", "default_duration": "10"},
             ]
         },
-        # Подраздел “Видео по образцу” (motion-control)
+        # Подраздел "Видео по тексту" (text2vid)
+        "video_from_text": {
+            "models": [
+                {"id": "wan/2.6", "name": "Wan 2.6", "cost": 20, "description": "Видео из текста до 15 сек, 720p/1080p. Китайское качество."},
+                {"id": "kling/v3", "name": "Kling 3.0 (из текста)", "cost": 25, "description": "Kling 3.0 без фото — только по текстовому описанию."},
+            ]
+        },
+        # Подраздел "Видео по образцу" (motion-control)
         "video_from_motion": {
             "models": [
                 {"id": "kling/v2.6-motion-control", "name": "Kling Motion", "cost": 35, "description": "Переносит движения с видео-референса на персонажа с фото."},

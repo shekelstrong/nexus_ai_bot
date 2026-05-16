@@ -21,7 +21,7 @@ POLZA_CHAT_URL = f"{POLZA_BASE_URL}/v1/chat/completions"
 POLZA_IMAGE_URL = f"{POLZA_BASE_URL}/v2/images/generations"
 POLZA_MEDIA_URL = f"{POLZA_BASE_URL}/v1/media"
 POLZA_MEDIA_STATUS_URL = POLZA_BASE_URL + "/v1/media/{}/status"
-POLZA_FILE_UPLOAD_URL = f"{POLZA_BASE_URL}/v1/files/upload"
+POLZA_FILE_UPLOAD_URL = f"{POLZA_BASE_URL}/v1/storage/upload"  # Был /v1/files/upload — неправильный! (см. docs https://polza.ai/docs/api-reference/storage/upload)
 
 
 def _headers() -> Dict[str, str]:
@@ -244,25 +244,36 @@ async def generate_video(
         "aspect_ratio": extra_params.get("aspect_ratio", "16:9"),
     }
 
-    # Image-to-Video
+    # Image-to-Video — автоопределение: base64 data URL или обычный URL
     if image_url:
-        payload["images"] = [{"type": "url", "data": image_url}]
+        if image_url.startswith("data:"):
+            payload["images"] = [{"type": "base64", "data": image_url}]
+        else:
+            payload["images"] = [{"type": "url", "data": image_url}]
 
     # Дополнительные параметры
     if "duration" in extra_params:
         payload["duration"] = extra_params["duration"]
     if "second_image_url" in extra_params:
-        # Veo First-Last-Frame
+        # Veo First-Last-Frame — определяем тип автоматически
+        second_url = extra_params["second_image_url"]
         if "images" not in payload:
             payload["images"] = []
-        payload["images"].append({"type": "url", "data": extra_params["second_image_url"]})
+        if second_url.startswith("data:"):
+            payload["images"].append({"type": "base64", "data": second_url})
+        else:
+            payload["images"].append({"type": "url", "data": second_url})
     if "cfg_scale" in extra_params:
         payload["guidance_scale"] = extra_params["cfg_scale"]
     if "video_url" in extra_params:
-        # Motion control reference video
+        # Motion control reference video — определяем тип автоматически
+        video_ref_url = extra_params["video_url"]
         if "images" not in payload:
             payload["images"] = []
-        payload["images"].append({"type": "url", "data": extra_params["video_url"]})
+        if video_ref_url.startswith("data:"):
+            payload["images"].append({"type": "base64", "data": video_ref_url})
+        else:
+            payload["images"].append({"type": "url", "data": video_ref_url})
 
     logger.info(f"Polza Video: model={model}, image={bool(image_url)}, params={list(payload.keys())}")
 

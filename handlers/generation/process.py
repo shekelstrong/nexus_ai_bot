@@ -884,17 +884,12 @@ async def _get_file_url_or_base64(bot, file_id, is_video=False):
     file_size_mb = len(file_bytes) / (1024*1024)
     logger.info(f"Photo download: {file_size_mb:.2f} MB")
 
-    # Всегда загружаем в Polza Storage — Polza не принимает base64 data URL
-    filename = f"{file_id}.jpg"
-    url = await upload_file_to_fal(file_bytes, filename, mime)
-    if url:
-        return url
-
-    # Fallback: Telegram URL (публично доступен)
-    telegram_url = f"https://api.telegram.org/file/bot{bot.token}/{file.file_path}"
-    safe_url = telegram_url.replace(bot.token, "***")
-    logger.warning(f"Polza upload failed, falling back to Telegram URL: {safe_url}")
-    return telegram_url
+    # Конвертируем в base64 data URL — Polza Media API принимает base32
+    # с type: "base64" (автоопределяется в polza_ai.py generate_video)
+    b64 = base64.b64encode(file_bytes).decode()
+    data_url = f"data:{mime};base64,{b64}"
+    logger.info(f"Photo as base64 data URL ({file_size_mb:.2f} MB)")
+    return data_url
 
 async def download_to_tempfile(url: str) -> Optional[str]:
     url = normalize_url(url)
