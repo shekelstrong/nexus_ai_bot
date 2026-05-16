@@ -57,7 +57,7 @@ async def upload_file(file_bytes: bytes, filename: str, content_type: str) -> Op
                         logger.info(f"Polza Upload успешен: {url}")
                         return url
                 else:
-                    logger.warning(f"Polza Upload ошибка {resp.status}: {await resp.text()[:200]}")
+                    logger.warning(f"Polza Upload ошибка {resp.status}: {(await resp.text())[:200]}")
         return None
     except Exception as e:
         logger.error(f"Polza Upload exception: {e}")
