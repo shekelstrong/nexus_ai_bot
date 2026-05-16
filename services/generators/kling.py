@@ -14,6 +14,7 @@ class KlingGenerator:
         prompt: str,
         image_url: Optional[str] = None,
         extra_params: Optional[Dict] = None,
+        context: Optional[Dict] = None,
     ) -> Optional[str]:
         if extra_params is None:
             extra_params = {}
@@ -35,6 +36,7 @@ class KlingGenerator:
                 extra_params=extra_params,
                 poll_seconds=10,
                 max_wait_seconds=1200,
+                context=context,
             )
 
         # Стандартная медиа-генерация
@@ -45,6 +47,7 @@ class KlingGenerator:
             extra_params=payload,
             poll_seconds=10,
             max_wait_seconds=1200,
+            context=context,
         )
 
     def _build_payload(

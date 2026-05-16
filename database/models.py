@@ -159,6 +159,7 @@ class Generation(Base):
     result: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), default=GenerationStatus.PENDING.value)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
+    polza_media_id: Mapped[Optional[str]] = mapped_column(String(255))
     cost: Mapped[int] = mapped_column(Integer, default=1)
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -14,6 +14,7 @@ class VeoGenerator:
         prompt: str,
         image_url: Optional[str] = None,
         extra_params: Optional[Dict] = None,
+        context: Optional[Dict] = None,
     ) -> Optional[str]:
         if extra_params is None:
             extra_params = {}
@@ -37,6 +38,7 @@ class VeoGenerator:
                 extra_params={"second_image_url": end_url},
                 poll_seconds=10,
                 max_wait_seconds=1800,
+                context=context,
             )
 
         elif "image-to-video" in model_id or "reference-to-video" in model_id:
@@ -48,6 +50,7 @@ class VeoGenerator:
                 image_url=image_url,
                 poll_seconds=10,
                 max_wait_seconds=1800,
+                context=context,
             )
 
         else:
@@ -60,4 +63,5 @@ class VeoGenerator:
                 extra_params={"aspect_ratio": aspect_ratio},
                 poll_seconds=10,
                 max_wait_seconds=1800,
+                context=context,
             )

@@ -14,6 +14,7 @@ class WanGenerator:
         prompt: str,
         image_url: Optional[str] = None,
         extra_params: Optional[Dict] = None,
+        context: Optional[Dict] = None,
     ) -> Optional[str]:
         if extra_params is None:
             extra_params = {}
@@ -31,7 +32,8 @@ class WanGenerator:
             model=model_id,
             prompt=prompt,
             image_url=image_url,
-            extra_params=payload,
+            extra_params=extra_params,
             poll_seconds=10,
-            max_wait_seconds=1800,
+            max_wait_seconds=600,
+            context=context,
         )

@@ -14,7 +14,44 @@ from aiogram.types import BufferedInputFile
 
 from config import settings
 from utils.logger import logger
+from utils.headers import get_headers as _headers
 
+# Отслеживание активных поллов для восстановления после рестарта
+import json
+import os
+import time
+_ACTIVE_POLLS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "active_polls.json")
+
+def _save_active_poll(media_id: str, context: dict):
+    entry = {"media_id": media_id, "timestamp": time.time()}
+    entry.update(context)
+    with open(_ACTIVE_POLLS_FILE, "a") as f:
+        json.dump(entry, f)
+        f.write("\n")
+
+def _load_active_polls():
+    if not os.path.exists(_ACTIVE_POLLS_FILE):
+        return []
+    polls = []
+    with open(_ACTIVE_POLLS_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    polls.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+    return polls
+
+def _clear_active_poll(media_id: str):
+    if not os.path.exists(_ACTIVE_POLLS_FILE):
+        return
+    with open(_ACTIVE_POLLS_FILE) as f:
+        lines = f.readlines()
+    with open(_ACTIVE_POLLS_FILE, "w") as f:
+        for line in lines:
+            if media_id not in line:
+                f.write(line)
 
 POLZA_BASE_URL = "https://polza.ai/api"
 POLZA_CHAT_URL = f"{POLZA_BASE_URL}/v1/chat/completions"
@@ -127,7 +164,7 @@ async def poll_media(media_id: str, poll_seconds: int = 5, max_wait_seconds: int
                             logger.info(f"Polza Poll: COMPLETED after {int(elapsed)}s")
                             return data
                         elif status == "FAILED":
-                            logger.error(f"Polza Poll: FAILED: {data.get(error, unknown)}")
+                            logger.error(f"Polza Poll: FAILED: {data.get('error', 'unknown')}")
                             return None
                         # IN_QUEUE, IN_PROGRESS, PROCESSING — продолжаем
                 except Exception as e:
@@ -157,9 +194,13 @@ def extract_media_url(data: Dict[str, Any]) -> Optional[str]:
             if url:
                 return url
 
-    # Массив результатов
+    # Массив результатов или объект с url
     for key in ["images", "videos", "data", "output"]:
         val = data.get(key)
+        if isinstance(val, dict):
+            url = val.get("url")
+            if url:
+                return url
         if isinstance(val, list) and val:
             first = val[0]
             if isinstance(first, dict):
@@ -230,11 +271,12 @@ async def generate_video(
     extra_params: Optional[Dict[str, Any]] = None,
     poll_seconds: int = 10,
     max_wait_seconds: int = 600,
+    context: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     """
     Генерация видео через Polza.AI Media API.
     
-    Поддерживает: Kling, Veo, Wan, Seedance
+    context: опциональный словарь с user_db_id, telegram_id, gen_id для персистентности полла.
     """
     if extra_params is None:
         extra_params = {}
@@ -300,12 +342,17 @@ async def generate_video(
         logger.error(f"Polza Video: нет ID для поллинга. Ответ: {str(result)[:200]}")
         return None
 
+    # Сохраняем активный полл для восстановления после рестарта
+    _save_active_poll(media_id, context or {})
+
     poll_result = await poll_media(media_id, poll_seconds=poll_seconds, max_wait_seconds=max_wait_seconds)
     if not poll_result:
+        _clear_active_poll(media_id)
         return None
 
     url = extract_media_url(poll_result)
     if url:
+        _clear_active_poll(media_id)
         return url
 
     # Fallback: response_url

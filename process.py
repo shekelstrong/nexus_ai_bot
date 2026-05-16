@@ -469,7 +469,8 @@ async def run_complex_generation(
         if video_url:
             extra["video_url"] = video_url
 
-        res_url_raw = await api.generate_video(model_id, prompt, image_url=first_url, extra_params=extra)
+        context = {"user_db_id": user.id, "telegram_id": user.telegram_id, "model": model_id}
+        res_url_raw = await api.generate_video(model_id, prompt, image_url=first_url, extra_params=extra, context=context)
 
         if not res_url_raw:
             raise Exception("Генерация не вернула результат (ошибка FAL AI)")
@@ -715,7 +716,8 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             prompt = "Creative video"
 
         if category == "gen_video":
-            res = await api.generate_video(model_info["id"], prompt, image_url=image_url, extra_params=extra_params)
+            context = {"user_db_id": user.id, "telegram_id": user.telegram_id, "model": model_info["id"]}
+            res = await api.generate_video(model_info["id"], prompt, image_url=image_url, extra_params=extra_params, context=context)
             if not res:
                 raise Exception("Ошибка видео")
             

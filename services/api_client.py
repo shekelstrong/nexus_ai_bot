@@ -68,7 +68,8 @@ class APIClient:
         model: str, 
         prompt: str, 
         image_url: Optional[str] = None, 
-        extra_params: Optional[Dict[str, Any]] = None
+        extra_params: Optional[Dict[str, Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         model_lower = model.lower()
         
@@ -89,15 +90,15 @@ class APIClient:
                 extra_params["duration"] = dur
 
         if "seedance" in model_lower:
-            return await self.kling_gen.generate(actual_model, prompt, image_url, extra_params)
+            return await self.kling_gen.generate(actual_model, prompt, image_url, extra_params, context=context)
         if "kling" in model_lower:
-            return await self.kling_gen.generate(actual_model, prompt, image_url, extra_params)
+            return await self.kling_gen.generate(actual_model, prompt, image_url, extra_params, context=context)
         if "veo" in model_lower:
-            return await self.veo_gen.generate(actual_model, prompt, image_url, extra_params)
+            return await self.veo_gen.generate(actual_model, prompt, image_url, extra_params, context=context)
         if "wan" in model_lower:
-            return await self.wan_gen.generate(actual_model, prompt, image_url, extra_params)
+            return await self.wan_gen.generate(actual_model, prompt, image_url, extra_params, context=context)
         if "luma" in model_lower:
-             return await self.wan_gen.generate(actual_model, prompt, image_url, extra_params) 
+             return await self.wan_gen.generate(actual_model, prompt, image_url, extra_params, context=context) 
 
         logger.warning(f"APIClient: Unknown video model {model}. Using wan_gen.")
-        return await self.wan_gen.generate(actual_model, prompt, image_url, extra_params)
+        return await self.wan_gen.generate(actual_model, prompt, image_url, extra_params, context=context)

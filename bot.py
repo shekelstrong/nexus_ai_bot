@@ -23,6 +23,8 @@ from handlers.generation import selection, process
 from services.webhook_server import webhook_server
 # Импорт фоновых задач (планировщика)
 from services.scheduler import daily_token_reset_task, subscription_expiration_task
+# Восстановление активных поллов после рестарта
+from services.polza_ai import _load_active_polls, _clear_active_poll
 
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
@@ -64,6 +66,52 @@ async def on_startup(bot: Bot):
     # Запуск фоновых задач (планировщик для сброса токенов и подписок)
     asyncio.create_task(daily_token_reset_task())
     asyncio.create_task(subscription_expiration_task())
+    
+    # Восстановление поллов, потерянных при рестарте
+    asyncio.create_task(_recover_active_polls(bot))
+
+async def _recover_active_polls(bot: Bot):
+    """Проверяет активные поллы на Polza, завершённые или проваленные."""
+    import aiohttp
+    from services.polza_ai import _headers, extract_media_url
+    
+    polls = _load_active_polls()
+    if not polls:
+        return
+    
+    logger.info(f"♻️ Восстанавливаю {len(polls)} активных поллов...")
+    
+    for entry in polls[:5]:  # Максимум 5
+        media_id = entry.get("media_id")
+        if not media_id:
+            continue
+        
+        # Пробуем получить статус
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                url = f"https://polza.ai/api/v1/media/{media_id}"
+                async with session.get(url, headers=_headers()) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                    status = data.get("status", "").upper()
+                    
+                    if status == "COMPLETED":
+                        url = extract_media_url(data)
+                        if url:
+                            logger.info(f"♻️ Poll {media_id} завершён: {url[:80]}")
+                            _clear_active_poll(media_id)
+                        else:
+                            logger.warning(f"♻️ Poll {media_id} completed but no URL: {str(data)[:200]}")
+                            _clear_active_poll(media_id)
+                    elif status == "FAILED":
+                        logger.warning(f"♻️ Poll {media_id} провалился: {data}")
+                        _clear_active_poll(media_id)
+                    else:
+                        logger.info(f"♻️ Poll {media_id} ещё в процессе ({status}), оставляем.")
+        except Exception as e:
+            logger.warning(f"♻️ Poll {media_id} ошибка проверки: {e}")
 
 async def main():
     # 1. Регистрация Middleware (БД обязательна для работы роутеров)
