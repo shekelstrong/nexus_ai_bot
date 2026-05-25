@@ -11,6 +11,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./nexus.db:/app/nexus.db
+      - /etc/letsencrypt:/etc/letsencrypt:ro
 
   postgres:
     image: postgres:15-alpine
