@@ -1,10 +1,9 @@
 """
 Polza.AI API Client — универсальный клиент для Polza.ai
-Заменяет fal_ai.py (Fal AI)
-Поддерживает:
+поддерживает:
 - Текст: POST /api/v1/chat/completions (OpenAI-совместимый)
-- Изображения: POST /api/v2/images/generations
-- Медиа/Видео: POST /api/v1/media (асинхронно)
+- изображения: POST /api/v2/images/generations (OpenAI-style)
+- Медиа (изображения/видео): POST /api/v1/media (асинхронно)
 - Загрузка файлов: POST /api/v1/files/upload
 """
 import aiohttp
@@ -57,7 +56,7 @@ POLZA_CHAT_URL = f"{POLZA_BASE_URL}/v1/chat/completions"
 POLZA_IMAGE_URL = f"{POLZA_BASE_URL}/v2/images/generations"
 POLZA_MEDIA_URL = f"{POLZA_BASE_URL}/v1/media"
 POLZA_MEDIA_STATUS_URL = POLZA_BASE_URL + "/v1/media/{}/status"
-POLZA_FILE_UPLOAD_URL = f"{POLZA_BASE_URL}/v1/storage/upload"  # Был /v1/files/upload — неправильный! (см. docs https://polza.ai/docs/api-reference/storage/upload)
+POLZA_FILE_UPLOAD_URL = f"{POLZA_BASE_URL}/v1/storage/upload"
 
 
 def _headers() -> Dict[str, str]:
@@ -70,7 +69,6 @@ def _headers() -> Dict[str, str]:
 async def upload_file(file_bytes: bytes, filename: str, content_type: str) -> Optional[str]:
     """
     Загружает файл в хранилище Polza.AI и возвращает URL.
-    Используется для image-to-video и других задач.
     """
     if not file_bytes:
         logger.error("Polza Upload: file_bytes is None")
@@ -104,11 +102,6 @@ async def submit_media(model: str, payload: Dict[str, Any], async_mode: bool = T
     """
     Отправляет задачу на генерацию медиа (видео/аудио/изображения)
     через Polza.AI Media API.
-    
-    Args:
-        model: ID модели (kling/v2.6, wan/2.6, google/veo3, etc.)
-        payload: Параметры генерации {prompt, images, aspect_ratio, ...}
-        async_mode: True=асинхронно (нужен poll), False=синхронно
     """
     url = POLZA_MEDIA_URL
     body = {
@@ -128,7 +121,7 @@ async def submit_media(model: str, payload: Dict[str, Any], async_mode: bool = T
                     logger.error(f"Polza Media Error {resp.status}: {err[:300]}")
                     return None
                 data = await resp.json()
-                logger.info(f"Polza Media response keys: {list(data.keys()) if isinstance(data, dict) else not-dict}")
+                logger.info(f"Polza Media response keys: {list(data.keys()) if isinstance(data, dict) else 'not-dict'}")
                 return data
     except Exception as e:
         logger.error(f"Polza Media exception: {e}")
@@ -137,7 +130,7 @@ async def submit_media(model: str, payload: Dict[str, Any], async_mode: bool = T
 
 async def poll_media(media_id: str, poll_seconds: int = 5, max_wait_seconds: int = 600) -> Optional[Dict[str, Any]]:
     """
-    Поллинг статуса медиа-генерации.
+    ПОллинг статуса медиа-генерации.
     """
     url = POLZA_MEDIA_STATUS_URL.format(media_id)
     logger.info(f"Polza Poll: start polling {media_id}, max {max_wait_seconds}s")
@@ -179,7 +172,7 @@ def extract_media_url(data: Dict[str, Any]) -> Optional[str]:
     if not isinstance(data, dict):
         return None
 
-    # Прямой URL в ответе
+    # прямой URL в ответе
     for key in ["url", "video_url", "audio_url", "image_url"]:
         val = data.get(key)
         if isinstance(val, str) and val.startswith("http"):
@@ -215,7 +208,7 @@ def extract_media_url(data: Dict[str, Any]) -> Optional[str]:
         if isinstance(output, dict):
             return extract_media_url(output)
 
-    # Polling ответ может иметь result / response вложенный
+    # ПОллинг ответ может иметь result / response вложенный
     for key in ["result", "response"]:
         val = data.get(key)
         if isinstance(val, dict):
@@ -226,10 +219,76 @@ def extract_media_url(data: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+# =====================================================================
+# IMAGE GENERATION (через Polza AI Media API — yandex-art, qwen-image-2, flux.2 и др.)
+# =====================================================================
+
+async def generate_media_image(
+    model: str,
+    prompt: str,
+    aspect_ratio: str = "1:1",
+    max_images: int = 1,
+    reference_images: Optional[List[str]] = None,
+) -> Optional[str]:
+    """
+    Генерация изображения через Polza.AI Media API.
+    Используется для yandex/yandex-art, qwen/image-2, bytedance/seedream-5-lite,
+    topaz/image-upscale, x-ai/grok-imagine-image, black-forest-labs/flux.2-pro/flex,
+    google/gemini-3.1-flash-image-preview (Nano Banana и т.д.)
+    
+    aspect_ratio: "1:1", "9:16" (vert), "16:9" (horiz)
+    """
+    payload: Dict[str, Any] = {
+        "prompt": prompt,
+        "aspect_ratio": aspect_ratio,
+        "max_images": max_images,
+    }
+
+    # reference images (до 10 штук)
+    if reference_images:
+        images = []
+        for img in reference_images[:10]:
+            if img.startswith("data:"):
+                images.append({"type": "base64", "data": img})
+            else:
+                images.append({"type": "url", "data": img})
+        if images:
+            payload["images"] = images
+
+    logger.info(f"Polza Media Image: model={model}, aspect={aspect_ratio}, refs={len(reference_images or [])}")
+
+    result = await submit_media(model, payload, async_mode=True)
+    if not result:
+        return None
+
+    # быстрый синхронный ответ
+    url = extract_media_url(result)
+    if url:
+        logger.info(f"Polza Media Image: быстрый URL")
+        return url
+
+    # ПОллинг
+    media_id = result.get("id") or result.get("media_id") or result.get("request_id")
+    if not media_id:
+        logger.error(f"Polza Media Image: нет ID для поллинга. Ответ: {str(result)[:200]}")
+        return None
+
+    poll_result = await poll_media(media_id, poll_seconds=5, max_wait_seconds=300)
+    if not poll_result:
+        return None
+
+    url = extract_media_url(poll_result)
+    return url
+
+
+# =====================================================================
+# OPENAI-СТИЛЬ IMAGE GENERATION (для обратной совместимости / GPT-Image)
+# =====================================================================
+
 async def generate_image(model: str, prompt: str, size: Optional[str] = None) -> Optional[str]:
     """
-    Генерация изображения через Polza.AI Images API.
-    OpenAI-совместимый DALL-E стиль.
+    Генерация изображения через Polza.AI Images API (OpenAI-style).
+    Используется для openai/gpt-5.4-image-2 и т.д.
     """
     payload = {
         "model": model,
@@ -240,7 +299,7 @@ async def generate_image(model: str, prompt: str, size: Optional[str] = None) ->
     if size:
         payload["size"] = size
 
-    logger.info(f"Polza Image: model={model}, prompt={prompt[:50]}")
+    logger.info(f"Polza Image (OpenAI-style): model={model}, prompt={prompt[:50]}")
 
     try:
         timeout = aiohttp.ClientTimeout(total=120, sock_connect=30, sock_read=60)
@@ -263,6 +322,10 @@ async def generate_image(model: str, prompt: str, size: Optional[str] = None) ->
         return None
 
 
+# =====================================================================
+# VIDEO GENERATION (Polza AI Media API)
+# =====================================================================
+
 async def generate_video(
     model: str,
     prompt: str,
@@ -282,21 +345,39 @@ async def generate_video(
 
     payload: Dict[str, Any] = {
         "prompt": prompt,
-        "aspect_ratio": extra_params.get("aspect_ratio", "16:9"),
+        "resolution": extra_params.get("resolution", "720p"),
+        "duration": extra_params.get("duration", "5s"),
     }
 
-    # Image-to-Video — автоопределение: base64 data URL или обычный URL
+    # aspect_ratio как fallback, если resolution не задан
+    if "aspect_ratio" in extra_params and "resolution" not in extra_params:
+        ar = extra_params["aspect_ratio"]
+        # маппинг aspect_ratio -> resolution (9:16 = горизонтальное 720p/1080p)
+        resolution_map = {
+            "9:16": "1080p",   # вертикальное
+            "16:9": "720p",    # горизонтальное
+        }
+        payload["resolution"] = resolution_map.get(ar, "720p")
+
+    # Multi-shots
+    if "multi_shots" in extra_params:
+        payload["multi_shots"] = bool(extra_params["multi_shots"])
+
+    # Image-to-Video
     if image_url:
         if image_url.startswith("data:"):
             payload["images"] = [{"type": "base64", "data": image_url}]
         else:
             payload["images"] = [{"type": "url", "data": image_url}]
 
-    # Дополнительные параметры
-    if "duration" in extra_params:
-        payload["duration"] = extra_params["duration"]
+    # дополнительные параметры
+    _handled = {"resolution", "duration", "aspect_ratio", "multi_shots", "second_image_url", "video_url"}
+    for k, v in extra_params.items():
+        if k not in _handled and k not in payload:
+            payload[k] = v
+
+    # Second image для first-last-frame
     if "second_image_url" in extra_params:
-        # Veo First-Last-Frame — определяем тип автоматически
         second_url = extra_params["second_image_url"]
         if "images" not in payload:
             payload["images"] = []
@@ -304,10 +385,9 @@ async def generate_video(
             payload["images"].append({"type": "base64", "data": second_url})
         else:
             payload["images"].append({"type": "url", "data": second_url})
-    if "cfg_scale" in extra_params:
-        payload["cfg_scale"] = extra_params["cfg_scale"]
+
+    # Reference video для motion-control
     if "video_url" in extra_params:
-        # Motion control reference video — определяем тип автоматически
         video_ref_url = extra_params["video_url"]
         if "images" not in payload:
             payload["images"] = []
@@ -316,12 +396,6 @@ async def generate_video(
         else:
             payload["images"].append({"type": "url", "data": video_ref_url})
 
-    # Параметры, которые обработаны выше (не копировать повторно)
-    _handled = {"aspect_ratio", "duration", "cfg_scale", "second_image_url", "video_url"}
-    for k, v in extra_params.items():
-        if k not in _handled and k not in payload:
-            payload[k] = v
-
     logger.info(f"Polza Video: model={model}, image={bool(image_url)}, params={list(payload.keys())}")
 
     # Отправляем асинхронно
@@ -329,19 +403,18 @@ async def generate_video(
     if not result:
         return None
 
-    # Пробуем сразу достать URL (синхронный ответ)
+    # быстрый URL
     url = extract_media_url(result)
     if url:
         logger.info(f"Polza Video: быстрый URL получен")
         return url
 
-    # Иначе — поллинг
+    # ПОллинг
     media_id = result.get("id") or result.get("media_id") or result.get("request_id")
     if not media_id:
         logger.error(f"Polza Video: нет ID для поллинга. Ответ: {str(result)[:200]}")
         return None
 
-    # Сохраняем активный полл для восстановления после рестарта
     _save_active_poll(media_id, context or {})
 
     poll_result = await poll_media(media_id, poll_seconds=poll_seconds, max_wait_seconds=max_wait_seconds)
@@ -372,6 +445,10 @@ async def generate_video(
     logger.error(f"Polza Video: не удалось извлечь URL")
     return None
 
+
+# =====================================================================
+# TEXT GENERATION (OpenAI-совместимый Chat Completions)
+# =====================================================================
 
 async def generate_text(
     model: str,

@@ -1,13 +1,9 @@
-"""Wan 2.6 генератор — переписан на Polza.AI Media API вместо Fal AI"""
-from typing import Optional, Dict
-
+"""Legacy wrapper — Wan models теперь через Polza AI Media API."""
+from typing import Optional, Dict, Any
 from services.polza_ai import generate_video
 from utils.logger import logger
 
-
 class WanGenerator:
-    """Генерация Wan видео через Polza.AI Media API."""
-
     async def generate(
         self,
         model_id: str,
@@ -18,16 +14,7 @@ class WanGenerator:
     ) -> Optional[str]:
         if extra_params is None:
             extra_params = {}
-
-        payload = {"aspect_ratio": "16:9"}
-
-        if "image-to-video" in (model_id or ""):
-            if not image_url:
-                return None
-        elif "reference" in (model_id or ""):
-            if not image_url:
-                return None
-
+        logger.info(f"WanGenerator -> Polza AI: model={model_id}")
         return await generate_video(
             model=model_id,
             prompt=prompt,

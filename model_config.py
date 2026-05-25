@@ -56,32 +56,16 @@ MODEL_CATALOG = {
     },
 
     "gen_image": {
-        "flux": {
+        "image_models": {
             "models": [
-                {"id": "black-forest-labs/flux.2-pro", "name": "Flux 2.0 Pro", "cost": 4, "description": "Лучшая модель для фотореализма. Идеально рисует лица, пальцы и понимает текст на картинках."},
-                {"id": "black-forest-labs/flux.2-pro", "name": "Flux 2.0 Max", "cost": 4, "description": "Максимальная детализация. Для сложных артов с обилием мелких объектов."},
-                {"id": "black-forest-labs/flux.2-flex", "name": "Flux 2.0 Flex", "cost": 2, "description": "Сбалансированная версия Flux. Рисует быстро и качественно."},
-                {"id": "black-forest-labs/flux.2-flex", "name": "Flux 2.0 Klein", "cost": 1, "description": "Самая быстрая и легкая версия Flux для черновиков и набросков."},
-                {"id": "black-forest-labs/flux.2-flex", "name": "Stable Diffusion v3.5 Large", "cost": 3, "description": "Легендарная классика в обновленном виде. Широкие возможности стилизации."},
-            ]
-        },
-        "riverflow": {
-            "models": [
-                {"id": "sourceful/riverflow-v2-max-preview", "name": "Riverflow v2 Max", "cost": 4, "description": "Мощная генерация изображений с высокой эстетической привлекательностью."},
-                {"id": "sourceful/riverflow-v2-standard-preview", "name": "Riverflow v2 Standard", "cost": 2, "description": "Стандартная версия Riverflow для качественного арта."},
-                {"id": "sourceful/riverflow-v2-fast-preview", "name": "Riverflow v2 Fast", "cost": 1, "description": "Облегченная версия Riverflow для быстрой отрисовки идей."},
-            ]
-        },
-        "seedream": {
-            "models": [
-                {"id": "bytedance/seedream-4.5", "name": "Seedream 4.5", "cost": 3, "description": "Нейросеть от создателей TikTok. Яркие, сочные цвета и отличная стилизация."},
-            ]
-        },
-        "gemini_image": {
-            "models": [
-                {"id": "openai/gpt-5-image", "name": "GPT-5 Image", "cost": 5, "description": "Флагманский генератор изображений от создателей ChatGPT. Идеальное понимание сложных промптов."},
-                {"id": "openai/gpt-5-image-mini", "name": "GPT-5 Image Mini", "cost": 2, "description": "Облегченная версия генератора для быстрого создания креативов."},
-                {"id": "openai/gpt-5.4-image-2", "name": "GPT Image 2", "cost": 8, "description": "GPT-5.4 + GPT Image 2 от OpenAI. Многомодальная генерация с высшим качеством и точным следованием промпту."},
+                {"id": "yandex/yandex-art", "name": "Яндекс Арт", "cost": 3, "description": "Яндекс Арт — генерация изображений от Yandex. Аспекты: 1:1, 9:16, 16:9."},
+                {"id": "openai/gpt-5.4-image-2", "name": "GPT Images 2", "cost": 8, "description": "GPT-5.4 + GPT Image 2 от OpenAI. Многомодальная генерация с высшим качеством."},
+                {"id": "qwen/image-2", "name": "Qwen Image 2", "cost": 3, "description": "Qwen Image 2 — генерация изображений от Alibaba. Аспекты: 1:1, 9:16, 16:9."},
+                {"id": "bytedance/seedream-5-lite", "name": "Seedream 5.0", "cost": 3, "description": "Seedream 5.0 Lite от ByteDance. Яркие, сочные цвета и отличная стилизация."},
+                {"id": "topaz/image-upscale", "name": "Топаз Апскейлер", "cost": 5, "description": "Топаз Апскейлер — улучшение и увеличение изображений. Аспекты: 1:1, 9:16, 16:9."},
+                {"id": "x-ai/grok-imagine-image", "name": "Грок Image", "cost": 4, "description": "Грок Image — генерация изображений от xAI (Илон Маск). Аспекты: 1:1, 9:16, 16:9."},
+                {"id": "black-forest-labs/flux.2-pro", "name": "FLUX 2 PRO", "cost": 4, "description": "FLUX 2 PRO — лучшая модель для фотореализма. Идеально рисует лица и пальцы."},
+                {"id": "black-forest-labs/flux.2-flex", "name": "FLUX-2 FLEX", "cost": 2, "description": "FLUX-2 FLEX — сбалансированная версия Flux. Рисует быстро и качественно."},
             ]
         },
     },
@@ -97,28 +81,15 @@ MODEL_CATALOG = {
     },
 
     "gen_video": {
-        # Подраздел "Видео по фото" (img2vid)
-        "video_from_photo": {
+        "video_models": {
             "models": [
-                {"id": "kling/v3", "name": "Kling 3.0", "cost": 35, "description": "Новейшая Kling 3.0 — 15 сек, sound, std/pro. Отправьте 1 фото."},
-                {"id": "kling/v2.5-turbo", "name": "Kling 2.5 Turbo", "cost": 35, "description": "Оживляет любую вашу фотографию. Отправьте 1 фото."},
-                {"id": "google/veo3", "name": "Veo 3.1 (по 1 фото)", "cost": 30, "description": "Оживляет статичные картинки с естественной физикой Google. Отправьте 1 фото."},
-                {"id": "google/veo3", "name": "Veo 3.1 (по 2 фото)", "cost": 30, "description": "Магия переходов: отправьте начальный и конечный кадр, нейросеть додумает видео между ними."},
-                {"id": "bytedance/seedance-2::5", "name": "Seedance 2.0 (5 сек)", "cost": 70, "description": "Премиум генерация видео из фото (5 сек). Анимирует синхронным звуком.", "default_duration": "5"},
-                {"id": "bytedance/seedance-2::10", "name": "Seedance 2.0 (10 сек)", "cost": 100, "description": "Премиум генерация видео из фото (10 сек). Анимирует синхронным звуком, управление начальным/конечным кадром.", "default_duration": "10"},
-            ]
-        },
-        # Подраздел "Видео по тексту" (text2vid)
-        "video_from_text": {
-            "models": [
-                {"id": "wan/2.6", "name": "Wan 2.6", "cost": 20, "description": "Видео из текста до 15 сек, 720p/1080p. Китайское качество."},
-                {"id": "kling/v3", "name": "Kling 3.0 (из текста)", "cost": 25, "description": "Kling 3.0 без фото — только по текстовому описанию."},
-            ]
-        },
-        # Подраздел "Видео по образцу" (motion-control)
-        "video_from_motion": {
-            "models": [
-                {"id": "kling/v2.6-motion-control", "name": "Kling Motion", "cost": 35, "description": "Переносит движения с видео-референса на персонажа с фото."},
+                {"id": "bytedance/seedance-2-fast", "name": "Seedance 2 Fast", "cost": 70, "description": "Seedance 2 Fast — быстрая видео генерация от ByteDance. 720p/1080p, 5/10/15 сек.", "default_duration": "5"},
+                {"id": "bytedance/seedance-2", "name": "Seedance 2", "cost": 100, "description": "Seedance 2 — премиум генерация видео от ByteDance. 720p/1080p, 5/10/15 сек.", "default_duration": "10"},
+                {"id": "kling/v3-motion-control", "name": "Kling 3 Motion Control", "cost": 35, "description": "Kling 3 Motion Control — перенос движений с референса. 720p/1080p, 5/10/15 сек."},
+                {"id": "topaz/video-upscale", "name": "Топаз Видео Апскейлер", "cost": 50, "description": "Топаз Видео Апскейлер — улучшение и увеличение видео. 720p/1080p, 5/10/15 сек."},
+                {"id": "wan/2.6", "name": "WAN-2,6", "cost": 20, "description": "WAN-2.6 — видео генерация из текста. 720p/1080p, 5/10/15 сек."},
+                {"id": "google/veo3_fast", "name": "VEO 3.1 Fast", "cost": 30, "description": "VEO 3.1 Fast — быстрая видео генерация от Google. 720p/1080p, 5/10/15 сек."},
+                {"id": "google/veo3", "name": "VEO 3.1 Pro", "cost": 35, "description": "VEO 3.1 Pro — премиум видео генерация от Google. 720p/1080p, 5/10/15 сек."},
             ]
         },
     },
@@ -143,3 +114,10 @@ MODEL_CATALOG = {
         }
     }
 }
+
+# Получить все модели одним словарем
+ALL_MODEL_IDS = {}
+for category, families in MODEL_CATALOG.items():
+    for family_key, family_data in families.items():
+        for model in family_data["models"]:
+            ALL_MODEL_IDS[model["id"]] = model

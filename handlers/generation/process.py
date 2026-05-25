@@ -17,7 +17,7 @@ from keyboards.inline import main_menu, back_to_menu_kb, post_generation_kb
 from utils.logger import logger
 from model_config import MODEL_CATALOG
 from states.generation_states import GenState
-from services.polza_ai import upload_file as upload_file_to_fal
+from services.supabase_storage import upload_photo, upload_video as supabase_upload_video
 
 
 def _safe_html(text: str, max_len: int = 3900) -> str:
@@ -259,7 +259,7 @@ async def _process_album_task(message: Message, state: FSMContext, session: Asyn
         model_info = ALL_MODELS[model_id]
         category = model_info.get("category", "gen_text")
 
-        if category not in ["gen_image", "gen_nano_banana", "gen_video"]:
+        if category not in ["gen_image", "gen_nano_banana"]:
             logger.info(f"Album: не изображение (category={category}), игнорируем")
             return
 
@@ -282,75 +282,6 @@ async def _process_album_task(message: Message, state: FSMContext, session: Asyn
 
         reference_images = album_photos[:10]
         prompt = album_prompt or ""
-
-        if category == "gen_video":
-            # Видео-альбом: первое фото как референс
-            await state.set_state(GenState.waiting_for_input)
-            if not reference_images:
-                await message.answer("❌ Для видео нужна фотография", parse_mode="HTML")
-                return
-
-            api = APIClient()
-            cost = model_info.get("cost", 1)
-            if user.tokens_balance < cost:
-                await message.answer(f"❌ Недостаточно токенов! Нужно {cost}.", parse_mode="HTML")
-                return
-            user.tokens_balance -= cost
-            await session.commit()
-
-            status_msg = await message.answer(
-                f"🎬 <b>{model_info['name']}</b>\nГенерирую видео...",
-                parse_mode="HTML"
-            )
-
-            try:
-                extra_params = {}
-                data = await state.get_data()
-                extra_params["aspect_ratio"] = data.get("video_ratio", "16:9")
-                extra_params["duration"] = data.get("video_duration", "5")
-
-                res = await api.generate_video(
-                    model_info["id"],
-                    prompt,
-                    image_url=reference_images[0],
-                    extra_params=extra_params,
-                )
-
-                if not res:
-                    raise Exception("Ошибка видео")
-
-                await status_msg.delete()
-
-                gen = Generation(
-                    user_id=user.id, model_name=model_info["id"],
-                    prompt=prompt, result="processing",
-                    status=GenerationStatus.COMPLETED, cost=cost,
-                )
-                session.add(gen)
-                await session.commit()
-
-                sent_msg = await message.answer_video(
-                    normalize_url(res),
-                    caption=f"🎬 <b>{model_info['name']}</b>\n💎 -{cost} токенов",
-                    parse_mode="HTML",
-                    reply_markup=post_generation_kb(gen.id, model_id=model_info["id"]),
-                )
-
-                if sent_msg and sent_msg.video:
-                    gen.result = sent_msg.video.file_id
-                else:
-                    gen.result = str(res)
-                await session.commit()
-
-            except Exception as e:
-                logger.error(f"Album Video Gen Error: {e}")
-                user.tokens_balance += cost
-                await session.commit()
-                try:
-                    await status_msg.edit_text(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
-                except:
-                    await message.answer(f"❌ Ошибка: {str(e)}", reply_markup=back_to_menu_kb())
-            return
 
         data = await state.get_data()
         size_prompt = data.get("size_prompt", "")
@@ -452,6 +383,7 @@ async def _process_single_message(message: Message, state: FSMContext, session: 
         data = await state.get_data()
         size_prompt = data.get("size_prompt", "")
         style_prompt = data.get("style_prompt", "")
+        image_aspect_ratio = data.get("image_aspect_ratio", "1:1")
         
         final_prompt = prompt
         if style_prompt:
@@ -459,15 +391,19 @@ async def _process_single_message(message: Message, state: FSMContext, session: 
         if size_prompt:
             final_prompt += size_prompt
 
-        await run_image_generation(message, session, final_prompt, reference_images, state)
+        await run_image_generation(message, session, final_prompt, reference_images, state, aspect_ratio=image_aspect_ratio)
         return
 
     # Передаём видео-параметры (формат, длительность) в extra_params
     extra_params = {}
     if category == "gen_video":
         data = await state.get_data()
+        # Новые параметры Polza AI Media API
+        extra_params["resolution"] = data.get("video_resolution", "720p")
+        extra_params["duration"] = f"{data.get('video_duration', '5')}s"
+        extra_params["multi_shots"] = data.get("video_multi_shots", False)
+        # Legacy fallback
         extra_params["aspect_ratio"] = data.get("video_ratio", "16:9")
-        extra_params["duration"] = data.get("video_duration", "5")
 
     await run_simple_generation(message, user, session, model_info, category, extra_params=extra_params)
 
@@ -538,10 +474,11 @@ async def run_complex_generation(
         if video_url:
             extra["video_url"] = video_url
 
-        res_url_raw = await api.generate_video(model_id, prompt, image_url=first_url, extra_params=extra)
+        context = {"user_db_id": user.id, "telegram_id": user.telegram_id, "model": model_id}
+        res_url_raw = await api.generate_video(model_id, prompt, image_url=first_url, extra_params=extra, context=context)
 
         if not res_url_raw:
-            raise Exception("Генерация не вернула результат (ошибка генерации)")
+            raise Exception("Генерация не вернула результат (ошибка FAL AI)")
 
         res_url = normalize_url(res_url_raw)
         if not res_url:
@@ -647,6 +584,7 @@ async def run_image_generation(
     prompt: str,
     reference_images: list = None,
     state: FSMContext = None,
+    aspect_ratio: str = "1:1",
 ):
     if reference_images is None:
         reference_images = []
@@ -675,14 +613,12 @@ async def run_image_generation(
 
     api = APIClient()
 
-    # Получаем размер из state (для моделей с поддержкой API-размера)
-    image_size = None
-    if state:
-        state_data = await state.get_data()
-        image_size = state_data.get("image_size")
-
     try:
-        res = await api.generate_image(model_info["id"], prompt, reference_images=reference_images, size=image_size)
+        res = await api.generate_image(
+            model_info["id"], prompt,
+            reference_images=reference_images,
+            aspect_ratio=aspect_ratio,
+        )
 
         if not res:
             raise Exception("Ошибка генерации изображения")
@@ -790,7 +726,8 @@ async def run_simple_generation(message: Message, user: User, session: AsyncSess
             prompt = "Creative video"
 
         if category == "gen_video":
-            res = await api.generate_video(model_info["id"], prompt, image_url=image_url, extra_params=extra_params)
+            context = {"user_db_id": user.id, "telegram_id": user.telegram_id, "model": model_info["id"]}
+            res = await api.generate_video(model_info["id"], prompt, image_url=image_url, extra_params=extra_params, context=context)
             if not res:
                 raise Exception("Ошибка видео")
             
@@ -858,38 +795,39 @@ async def _get_file_url_or_base64(bot, file_id, is_video=False):
     if is_video:
         telegram_url = f"https://api.telegram.org/file/bot{bot.token}/{file.file_path}"
         safe_url = telegram_url.replace(bot.token, "***")
-        logger.info(f"Video URL: {safe_url}. Downloading and uploading to Polza Storage...")
-        
+        logger.info(f"Video URL: {safe_url}. Downloading and uploading to Supabase Storage...")
+
         try:
             file_bytes_io = await bot.download_file(file.file_path)
             file_bytes = file_bytes_io.read()
-            mime = "video/mp4"
-            filename = f"{file_id}.mp4"
-            
-            url = await upload_file_to_fal(file_bytes, filename, mime)
+            url = await supabase_upload_video(file_bytes, file_id)
             if url:
-                logger.info(f"Video successfully uploaded to FAL Storage: {url}")
+                logger.info(f"Video successfully uploaded to Supabase Storage: {url}")
                 return url
-            else:
-                logger.warning("Failed to upload video to Polza Storage, falling back to Telegram URL")
+            logger.warning("Failed to upload video to Supabase, falling back to Telegram URL")
         except Exception as e:
-            logger.error(f"Error downloading/uploading video to FAL: {e}")
-            
+            logger.error(f"Error uploading video to Supabase: {e}")
+
         return telegram_url
 
     file_bytes_io = await bot.download_file(file.file_path)
     file_bytes = file_bytes_io.read()
-    mime = "image/jpeg"
 
-    file_size_mb = len(file_bytes) / (1024*1024)
+    file_size_mb = len(file_bytes) / (1024 * 1024)
     logger.info(f"Photo download: {file_size_mb:.2f} MB")
 
-    # Конвертируем в base64 data URL — Polza Media API принимает base32
-    # с type: "base64" (автоопределяется в polza_ai.py generate_video)
-    b64 = base64.b64encode(file_bytes).decode()
-    data_url = f"data:{mime};base64,{b64}"
-    logger.info(f"Photo as base64 data URL ({file_size_mb:.2f} MB)")
-    return data_url
+    # Загружаем в Supabase Storage (бесплатно, безлимитно до 2GB)
+    try:
+        url = await upload_photo(file_bytes, file_id)
+        if url:
+            logger.info(f"Photo uploaded to Supabase: {url}")
+            return url
+    except Exception as e:
+        logger.warning(f"Supabase photo upload failed: {e}")
+
+    # Fallback: если Supabase не работает — возвращаем base64 (для маленьких фото)
+    base64_str = base64.b64encode(file_bytes).decode("utf-8")
+    return f"data:image/jpeg;base64,{base64_str}"
 
 async def download_to_tempfile(url: str) -> Optional[str]:
     url = normalize_url(url)

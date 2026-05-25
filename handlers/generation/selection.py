@@ -9,7 +9,8 @@ from keyboards.inline import (
     main_menu, model_families_menu, models_list_menu, back_to_menu_kb,
     nano_banana_menu, video_category_menu, text_models_menu, prompt_menu,
     video_prompt_duration_menu, video_format_menu, video_duration_menu,
-    post_video_gen_kb, image_size_menu
+    post_video_gen_kb, image_aspect_ratio_menu, video_resolution_menu,
+    video_multi_shots_menu
 )
 from database.models import User
 from model_config import MODEL_CATALOG
@@ -41,41 +42,31 @@ SIZE_PROMPTS = {
     "3:2": " --ar 3:2"
 }
 
-# Маппинг размеров для GPT Image API (реальные пиксели)
-GPT_IMAGE_SIZES = {
-    "1:1": "1024x1024",
-    "2:3": "1024x1536",
-    "3:2": "1536x1024",
-}
-
-# Модели, поддерживающие выбор размера через API (не через промпт)
-SIZE_API_MODELS = {"openai/gpt-5.4-image-2", "openai/gpt-5-image", "openai/gpt-5-image-mini"}
-
 STYLE_PROMPTS = {
-    "Anime 🌸": ", anime style, vibrant, detailed illustration, by Makoto Shinkai, studio ghibli",
-    "Photo 📷": ", photorealistic, 8k, professional photography, sharp focus, octane render, canon 5d",
-    "Cyberpunk 🌃": ", cyberpunk style, neon lights, futuristic city, high detail, blade runner vibes",
-    "Fantasy ✨": ", fantasy style, epic, cinematic lighting, matte painting, by Greg Rutkowski, dnd",
-    "GTA V 🔫": ", GTA V loading screen style, grand theft auto art, vector illustration, cel shaded, highly detailed",
-    "Minecraft 🧱": ", minecraft style, voxel art, 3d blocky render, rtx on, vibrant colors",
-    "Pixar 🧸": ", disney pixar style, 3d render, cute, expressive, high quality, render man",
-    "Lego 🧱": ", lego style, plastic texture, depth of field, tilt shift, macro photography",
-    "Barbie 🎀": ", barbie world style, pink aesthetic, plastic doll texture, dreamhouse vibes",
-    "Dark Souls ⚔️": ", dark souls style, dark fantasy, gloomy, eldritch, fromsoftware artstyle",
-    "Soviet Poster ☭": ", soviet propaganda poster style, constructivism, bold red and black colors, geometric shapes, vintage texture",
-    "Oil Painting 🎨": ", oil painting, thick brushstrokes, van gogh style, starry night, textured",
-    "Pencil Sketch ✏️": ", charcoal sketch, graphite pencil, rough paper texture, black and white, hand drawn",
-    "Watercolor 💧": ", watercolor painting, soft colors, wet on wet, paper texture, dreamy",
-    "Ukiyo-e 🌊": ", ukiyo-e style, japanese woodblock print, hokusai, traditional art, flat colors",
-    "Vaporwave 📼": ", vaporwave aesthetic, 80s retro, neon purple and blue, glitch art, vhs effect",
-    "Low Poly 🔷": ", low poly 3d art, minimal, geometric, pastel colors, blender cycle render",
-    "Isometric 🎲": ", isometric view, 3d render, cute, diorama, detailed, orthographic",
-    "Claymation 🧱": ", plasticine, claymation style, stop motion, aardman animation, fingerprint texture",
-    "Unreal Engine 🎮": ", unreal engine 5 render, lumen, nanite, 8k, hyperrealistic, cinematic",
-    "Sticker 🏷️": ", die-cut sticker, white border, vector art, cute, simple",
-    "Tattoo 🐉": ", tattoo design, blackwork, linework, ink on skin, high contrast",
-    "Graffiti 🎨": ", street art, graffiti, spray paint, urban wall texture, vibrant",
-    "Logo 📐": ", vector logo, simple, minimalist, flat design, 2d, on white background"
+    "Anime :cherry_blossom:": ", anime style, vibrant, detailed illustration, by Makoto Shinkai, studio ghibli",
+    "Photo :camera:": ", photorealistic, 8k, professional photography, sharp focus, octane render, canon 5d",
+    "Cyberpunk :night_with_stars:": ", cyberpunk style, neon lights, futuristic city, high detail, blade runner vibes",
+    "Fantasy :sparkles:": ", fantasy style, epic, cinematic lighting, matte painting, by Greg Rutkowski, dnd",
+    "GTA V :gun:": ", GTA V loading screen style, grand theft auto art, vector illustration, cel shaded, highly detailed",
+    "Minecraft :brick:": ", minecraft style, voxel art, 3d blocky render, rtx on, vibrant colors",
+    "Pixar :teddy_bear:": ", disney pixar style, 3d render, cute, expressive, high quality, render man",
+    "Lego :brick:": ", lego style, plastic texture, depth of field, tilt shift, macro photography",
+    "Barbie :ribbon:": ", barbie world style, pink aesthetic, plastic doll texture, dreamhouse vibes",
+    "Dark Souls :crossed_swords:": ", dark souls style, dark fantasy, gloomy, eldritch, fromsoftware artstyle",
+    "Soviet Poster :hammer_and_sickle:": ", soviet propaganda poster style, constructivism, bold red and black colors, geometric shapes, vintage texture",
+    "Oil Painting :art:": ", oil painting, thick brushstrokes, van gogh style, starry night, textured",
+    "Pencil Sketch :pencil2:": ", charcoal sketch, graphite pencil, rough paper texture, black and white, hand drawn",
+    "Watercolor :sweat_drops:": ", watercolor painting, soft colors, wet on wet, paper texture, dreamy",
+    "Ukiyo-e :ocean:": ", ukiyo-e style, japanese woodblock print, hokusai, traditional art, flat colors",
+    "Vaporwave :vhs:": ", vaporwave aesthetic, 80s retro, neon purple and blue, glitch art, vhs effect",
+    "Low Poly :small_blue_diamond:": ", low poly 3d art, minimal, geometric, pastel colors, blender cycle render",
+    "Isometric :game_die:": ", isometric view, 3d render, cute, diorama, detailed, orthographic",
+    "Claymation :brick:": ", plasticine, claymation style, stop motion, aardman animation, fingerprint texture",
+    "Unreal Engine :video_game:": ", unreal engine 5 render, lumen, nanite, 8k, hyperrealistic, cinematic",
+    "Sticker :label:": ", die-cut sticker, white border, vector art, cute, simple",
+    "Tattoo :dragon:": ", tattoo design, blackwork, linework, ink on skin, high contrast",
+    "Graffiti :art:": ", street art, graffiti, spray paint, urban wall texture, vibrant",
+    "Logo :triangular_ruler:": ", vector logo, simple, minimalist, flat design, 2d, on white background"
 }
 STYLES_LIST = list(STYLE_PROMPTS.keys())
 
@@ -89,7 +80,7 @@ FAMILY_IMAGES = {
 }
 
 async def _send_menu(callback: CallbackQuery, text: str, kb: InlineKeyboardMarkup, img_path: str = None):
-    """Умный хелпер для переключения между текстовыми меню и меню с картинками"""
+    """умный хелпер для переключения между текстовыми меню и меню с картинками"""
     if img_path and os.path.exists(img_path):
         try:
             await callback.message.delete()
@@ -135,13 +126,13 @@ async def select_category_callback(callback: CallbackQuery, state: FSMContext):
             await _send_menu(callback, "<b>Текстовые модели</b>\nВыберите бренд:", text_models_menu(), img_path)
 
         elif category == "gen_video":
-            await _send_menu(callback, "<b>Генерация видео</b>\nВыберите тип:", video_category_menu(), img_path)
+            await _send_menu(callback, "<b>Генерация видео</b>\nВыберите модель:", model_families_menu(category), img_path)
 
         elif category == "gen_prompt":
             await _send_menu(callback, "<b>✨ Промпт</b>\nПолучите промпт по референсному изображению:", prompt_menu(), img_path)
 
         elif category == "gen_image":
-            await _send_menu(callback, "<b>Генерация изображений</b>\nВыберите семейство моделей:", model_families_menu(category), img_path)
+            await _send_menu(callback, "<b>Генерация изображений</b>\nВыберите модель:", model_families_menu(category), img_path)
 
         elif category == "gen_search":
             await _send_menu(callback, "<b>Поисковые модели</b>\nВыберите семейство моделей:", model_families_menu(category), img_path)
@@ -328,7 +319,88 @@ async def vprompt_duration_handler(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# --- Обработчики формата/длительности видео ---
+# --- НОВЫЕ ОБРАБОТЧИКИ IMAGE / VIDEO НАСТРОЕК ---
+
+@router.callback_query(F.data.startswith("ar_img:"))
+async def set_image_aspect_ratio(callback: CallbackQuery, state: FSMContext):
+    """Выбор соотношения сторон для изображения (Polza AI Media API)."""
+    ratio = callback.data.split(":", 1)[1]
+    # Сохраняем aspect ratio для передачи в Polza
+    await state.update_data(image_aspect_ratio=ratio)
+    
+    data = await state.get_data()
+    name = data.get("current_model_name", "Модель")
+    desc = data.get("current_model_desc", "")
+    desc_text = f"\nℹ️ <i>{desc}</i>\n" if desc else ""
+    
+    # Для новых image-моделей с Polza AI — сразу в режим ввода промпта
+    # (стили работали через --ar суффикс, но Polza AI принимает aspect_ratio в payload)
+    await state.set_state(GenState.waiting_for_input)
+    await callback.message.answer(
+        f"✅ Выбрана: <b>{name}</b>\n"
+        f"📐 Соотношение: <b>{ratio}</b>{desc_text}\n\n"
+        f"✍️ Напишите промпт для генерации изображения:",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_kb()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("vres:"))
+async def set_video_resolution(callback: CallbackQuery, state: FSMContext):
+    """Выбор разрешения видео."""
+    resolution = callback.data.split(":", 1)[1]
+    await state.update_data(video_resolution=resolution)
+    
+    await callback.message.edit_text(
+        f"✅ Разрешение: <b>{resolution}</b>\n\nВыберите <b>длительность</b> видео:",
+        parse_mode="HTML",
+        reply_markup=video_duration_menu()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("vdur:"))
+async def set_video_duration(callback: CallbackQuery, state: FSMContext):
+    """Выбор длительности видео."""
+    duration = callback.data.split(":", 1)[1]
+    await state.update_data(video_duration=duration)
+    
+    await callback.message.edit_text(
+        f"✅ Длительность: <b>{duration} сек</b>\n\nВыберите <b>мульти-шотовую композицию</b>:",
+        parse_mode="HTML",
+        reply_markup=video_multi_shots_menu()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("vms:"))
+async def set_video_multi_shots(callback: CallbackQuery, state: FSMContext):
+    """Выбор multi_shots (переходы между сценами)."""
+    multi_shots_str = callback.data.split(":", 1)[1]
+    multi_shots = multi_shots_str.lower() == "true"
+    await state.update_data(video_multi_shots=multi_shots)
+    
+    data = await state.get_data()
+    name = data.get("current_model_name", "Модель")
+    desc = data.get("current_model_desc", "")
+    resolution = data.get("video_resolution", "720p")
+    duration = data.get("video_duration", "5")
+    
+    desc_text = f"\nℹ️ <i>{desc}</i>\n" if desc else ""
+    
+    await state.set_state(GenState.waiting_for_input)
+    await callback.message.edit_text(
+        f"✅ Выбрана: <b>{name}</b>{desc_text}\n"
+        f"📹 <b>Параметры:</b> {resolution}, {duration} сек, мульти-шоты: {'да' if multi_shots else 'нет'}\n\n"
+        f"✍️ Напишите промпт (и пришлите фото для img2vid, если нужно):",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_kb()
+    )
+    await callback.answer()
+
+
+# --- Обработчики формата/длительности видео (legacy) ---
 
 @router.callback_query(F.data.startswith("vformat:"))
 async def video_format_handler(callback: CallbackQuery, state: FSMContext):
@@ -395,27 +467,20 @@ async def regen_model_handler(callback: CallbackQuery, state: FSMContext, sessio
 
     if category == "gen_video":
         await callback.message.answer(
-            f"🔄 <b>Снова: {name}</b>\n\nВыберите формат видео:",
+            f"🔄 <b>Снова: {name}</b>\n\nВыберите разрешение видео:",
             parse_mode="HTML",
-            reply_markup=video_format_menu()
+            reply_markup=video_resolution_menu()
         )
     elif category in ["gen_image", "gen_nano_banana"]:
-        if category == "gen_image" and model_id in SIZE_API_MODELS:
-            await callback.message.answer(
-                f"🔄 <b>Снова: {name}</b>\n\nВыберите формат изображения:",
-                parse_mode="HTML",
-                reply_markup=image_size_menu()
-            )
-        else:
-            await state.set_state(GenState.waiting_for_input)
-            prompt_hint = ""
-            if preserved_prompt:
-                prompt_hint = f"\n\n💡 <i>У вас есть сохранённый промпт — просто отправьте /use или скопируйте:</i>\n<code>{preserved_prompt[:300]}</code>"
-            await callback.message.answer(
-                f"🔄 <b>Снова: {name}</b>\n\nОтправьте промпт (и фото при необходимости):{prompt_hint}",
-                parse_mode="HTML",
-                reply_markup=back_to_menu_kb()
-            )
+        await state.set_state(GenState.waiting_for_input)
+        prompt_hint = ""
+        if preserved_prompt:
+            prompt_hint = f"\n\n💡 <i>У вас есть сохранённый промпт — просто отправьте /use или скопируйте:</i>\n<code>{preserved_prompt[:300]}</code>"
+        await callback.message.answer(
+            f"🔄 <b>Снова: {name}</b>\n\nОтправьте промпт (и фото при необходимости):{prompt_hint}",
+            parse_mode="HTML",
+            reply_markup=back_to_menu_kb()
+        )
     else:
         await state.set_state(GenState.waiting_for_input)
         await callback.message.answer(
@@ -457,19 +522,32 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
         
     desc_text = f"\nℹ️ <i>{description}</i>\n" if description else ""
     
-    if category in ["gen_image", "gen_nano_banana"]:
-        # Модели, поддерживающие выбор размера через API
-        if category == "gen_image" and model_id in SIZE_API_MODELS:
-            # Показываем меню выбора размера
-            await callback.message.answer(
-                f"✅ Выбрана: <b>{name}</b>{desc_text}\n\nВыберите <b>формат изображения</b>:",
-                parse_mode="HTML",
-                reply_markup=image_size_menu()
-            )
-            await callback.answer()
-            return
-        # Остальные модели — сразу в режим ввода без выбора размеров/стилей
-        await state.update_data(ratio="1:1", size_prompt="", style_prompt="", style="Без стиля", image_size=None)
+    # ---- НОВЫЕ IMAGE-МОДЕЛИ (Polza AI Media API) — выбор соотношения сторон ----
+    if category == "gen_image":
+        await callback.message.answer(
+            f"✅ Выбрана: <b>{name}</b>{desc_text}\n\n"
+            f"Выберите <b>соотношение сторон</b>:",
+            parse_mode="HTML",
+            reply_markup=image_aspect_ratio_menu()
+        )
+        await callback.answer()
+        return
+
+    # ---- НОВЫЕ VIDEO-МОДЕЛИ (Polza AI Media API) — выбор разрешения ----
+    if category == "gen_video":
+        await callback.message.answer(
+            f"✅ Выбрана: <b>{name}</b>{desc_text}\n\n"
+            f"Выберите <b>разрешение</b> видео:",
+            parse_mode="HTML",
+            reply_markup=video_resolution_menu()
+        )
+        await callback.answer()
+        return
+
+    # ---- NANO BANANA (оставляем старый flow) ----
+    if category == "gen_nano_banana":
+        # Сразу в режим ввода без выбора размеров/стилей
+        await state.update_data(ratio="1:1", size_prompt="", style_prompt="", style="Без стиля")
         text = f"✅ Выбрана: <b>{name}</b>{desc_text}\n\nОтправьте промпт (и фото-референс при необходимости):"
         await state.set_state(GenState.waiting_for_input)
         await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
@@ -486,22 +564,6 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
         text += "🔍 Теперь напишите ваш <b>вопрос для поиска</b>."
         await state.set_state(GenState.waiting_for_input)
         await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
-    elif category == "gen_video":
-        if "motion-control" in model_id:
-            text += "<b>Шаг 1:</b> Отправьте <b>фотографию персонажа</b>, которого хотите анимировать."
-            await state.set_state(GenState.waiting_for_first_image)
-            await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
-        elif "first-last" in model_id:
-            text += "<b>Шаг 1:</b> Отправьте <b>первую картинку</b> (начальный кадр)."
-            await state.set_state(GenState.waiting_for_first_image)
-            await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
-        else:
-            # Для всех остальных видео-моделей: выбор формата
-            await callback.message.answer(
-                f"✅ Выбрана: <b>{name}</b>{desc_text}\n\nВыберите <b>формат</b> видео:",
-                parse_mode="HTML",
-                reply_markup=video_format_menu()
-            )
     else:
         text += "Теперь просто напишите ваш <b>запрос (промпт)</b>."
         await state.set_state(GenState.waiting_for_input)
@@ -515,45 +577,6 @@ async def set_size(cb: CallbackQuery, state: FSMContext):
     await state.update_data(ratio=ratio, size_prompt=size_prompt)
     await show_styles_page(cb, state, page=0)
     await cb.answer()
-
-@router.callback_query(F.data.startswith("isize:"))
-async def set_image_size_handler(callback: CallbackQuery, state: FSMContext):
-    """Выбор размера для GPT Image моделей."""
-    ratio = callback.data.split(":", 1)[1]
-    api_size = GPT_IMAGE_SIZES.get(ratio, "1024x1024")
-    await state.update_data(
-        ratio=ratio,
-        size_prompt="",
-        style_prompt="",
-        style="Без стиля",
-        image_size=api_size
-    )
-    data = await state.get_data()
-    name = data.get("current_model_name", "Модель")
-    
-    try:
-        await callback.message.edit_text(
-            f"✅ Размер <b>{ratio}</b> ({api_size}) установлен!\n"
-            f"Модель: <b>{name}</b>\n\n"
-            "✍️ Отправьте промпт (и фото-референс при необходимости):",
-            parse_mode="HTML",
-            reply_markup=back_to_menu_kb()
-        )
-    except Exception:
-        try:
-            await callback.message.delete()
-        except:
-            pass
-        await callback.message.answer(
-            f"✅ Размер <b>{ratio}</b> ({api_size}) установлен!\n"
-            f"Модель: <b>{name}</b>\n\n"
-            "✍️ Отправьте промпт (и фото-референс при необходимости):",
-            parse_mode="HTML",
-            reply_markup=back_to_menu_kb()
-        )
-    
-    await state.set_state(GenState.waiting_for_input)
-    await callback.answer()
 
 @router.callback_query(F.data.startswith("stylepage_"))
 async def style_page_handler(cb: CallbackQuery, state: FSMContext):

@@ -37,8 +37,62 @@ def back_to_menu_kb() -> InlineKeyboardMarkup:
     ])
 
 
+# ---- IMAGE ASPECT RATIO MENU ----
+
+def image_aspect_ratio_menu() -> InlineKeyboardMarkup:
+    """Выбор соотношения сторон для генерации изображений (Polza AI)."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="1:1 (квадрат)", callback_data="ar_img:1:1", style="primary"),
+            InlineKeyboardButton(text="16:9 (альбом)", callback_data="ar_img:9:16", style="primary"),
+        ],
+        [
+            InlineKeyboardButton(text="9:16 (портрет)", callback_data="ar_img:16:9", style="primary"),
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
+    ])
+
+
+# ---- VIDEO FORMAT & DURATION ----
+
+def video_resolution_menu() -> InlineKeyboardMarkup:
+    """Выбор разрешения видео."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="720p", callback_data="vres:720p", style="primary"),
+            InlineKeyboardButton(text="1080p", callback_data="vres:1080p", style="primary"),
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
+    ])
+
+
+def video_duration_menu() -> InlineKeyboardMarkup:
+    """Выбор длительности видео."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="5 сек", callback_data="vdur:5", style="primary"),
+            InlineKeyboardButton(text="10 сек", callback_data="vdur:10", style="primary"),
+            InlineKeyboardButton(text="15 сек", callback_data="vdur:15", style="primary"),
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
+    ])
+
+
+def video_multi_shots_menu() -> InlineKeyboardMarkup:
+    """Выбор multi_shots (мульти-шотовая композиция)."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🎬 С переходами", callback_data="vms:true", style="primary"),
+            InlineKeyboardButton(text="❌ Без переходов", callback_data="vms:false", style="primary"),
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
+    ])
+
+
+# ---- LEGACY (остаются для совместимости) ----
+
 def video_category_menu() -> InlineKeyboardMarkup:
-    """Меню подразделов видео."""
+    """Меню подразделов видео (теперь показывает модели напрямую)."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📸 Видео по фото", callback_data="family:gen_video:video_from_photo", style="primary")],
         [InlineKeyboardButton(text="🎥 Видео по образцу", callback_data="family:gen_video:video_from_motion", style="primary")],
@@ -104,7 +158,7 @@ def image_size_menu() -> InlineKeyboardMarkup:
 
 
 def video_format_menu() -> InlineKeyboardMarkup:
-    """Выбор формата видео."""
+    """Выбор формата видео (legacy — для motion-control)."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="9:16 (вертикальное)", callback_data="vformat:9:16", style="primary"),
@@ -114,16 +168,7 @@ def video_format_menu() -> InlineKeyboardMarkup:
     ])
 
 
-def video_duration_menu() -> InlineKeyboardMarkup:
-    """Выбор длительности видео."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="5 секунд", callback_data="vduration:5", style="primary"),
-            InlineKeyboardButton(text="10 секунд", callback_data="vduration:10", style="primary")
-        ],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
-    ])
-
+# ---- POST-GENERATION KEYBOARDS ----
 
 def post_video_gen_kb(model_id: str, gen_id: int = None) -> InlineKeyboardMarkup:
     """Клавиатура после видеогенерации: Снова + Меню."""
@@ -140,6 +185,7 @@ def post_video_gen_kb(model_id: str, gen_id: int = None) -> InlineKeyboardMarkup
             InlineKeyboardButton(text="📢 Поделиться", callback_data=f"share_gen:{gen_id}", style="primary")
         ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 def post_generation_kb(gen_id: int = None, model_id: str = None) -> InlineKeyboardMarkup:
     """Клавиатура после генерации."""
@@ -165,12 +211,14 @@ def post_generation_kb(gen_id: int = None, model_id: str = None) -> InlineKeyboa
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+
 def try_prompt_kb(gen_id: int) -> InlineKeyboardMarkup:
     """Кнопка для канала 'Попробовать этот промпт' (Deep Link)"""
     url = f"https://t.me/nexsai_bot?start=gen_{gen_id}"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🚀 Попробовать этот промпт", url=url)]
     ])
+
 
 def confirm_try_prompt_kb(gen_id: int) -> InlineKeyboardMarkup:
     """Клавиатура Да/Нет(Изменить) для запуска чужого промпта"""
@@ -180,11 +228,15 @@ def confirm_try_prompt_kb(gen_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="❌ Отмена", callback_data="back_to_menu", style="danger")]
     ])
 
+
 def cancel_generation_menu() -> InlineKeyboardMarkup:
     """Клавиатура для отмены текущего процесса генерации."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ Отменить", callback_data="back_to_menu", style="danger")]
     ])
+
+
+# ---- CATEGORY & FAMILY MENUS ----
 
 def model_families_menu(category: str) -> InlineKeyboardMarkup:
     """Меню выбора семейства моделей в определенной категории (компактно по 2)."""
@@ -211,7 +263,11 @@ def model_families_menu(category: str) -> InlineKeyboardMarkup:
         "wan": "Wan Video",
         "fal_ai_video": "Polza Video",
         "perplexity": "Perplexity",
-        "google_search": "Google Search"
+        "google_search": "Google Search",
+        # Новые секции
+        "image_models": "🎨 Изображения",
+        "video_models": "🎥 Видео",
+        "nano_banana": "🍌 Nano Banana",
     }
     
     buttons = []
@@ -236,6 +292,7 @@ def model_families_menu(category: str) -> InlineKeyboardMarkup:
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+
 def models_list_menu(category: str, family: str) -> InlineKeyboardMarkup:
     """Меню выбора конкретной модели (компактно по 2)."""
     models = MODEL_CATALOG.get(category, {}).get(family, {}).get("models", [])
@@ -259,6 +316,7 @@ def models_list_menu(category: str, family: str) -> InlineKeyboardMarkup:
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"cat:{category}", style="success")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+
 def nano_banana_menu() -> InlineKeyboardMarkup:
     """Меню выбора моделей Nano Banana."""
     models = MODEL_CATALOG.get("gen_nano_banana", {}).get("nano_banana", {}).get("models", [])
@@ -280,12 +338,14 @@ def nano_banana_menu() -> InlineKeyboardMarkup:
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+
 def profile_menu() -> InlineKeyboardMarkup:
     """Меню профиля."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💎 Пополнить баланс", callback_data="subscriptions", style="success")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
     ])
+
 
 def subscription_tiers_menu() -> InlineKeyboardMarkup:
     """Меню тарифов подписки и пакетов."""
@@ -302,6 +362,7 @@ def subscription_tiers_menu() -> InlineKeyboardMarkup:
     keyboard.append([InlineKeyboardButton(text="🪙 Пакеты токенов", callback_data="packet_tokens", style="primary")])
     keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
 
 def token_package_menu() -> InlineKeyboardMarkup:
     """Меню покупки пакетов токенов."""
