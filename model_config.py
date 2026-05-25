@@ -62,6 +62,7 @@ MODEL_CATALOG = {
                 {"id": "openai/gpt-5.4-image-2", "name": "GPT Images 2", "cost": 8, "description": "GPT-5.4 + GPT Image 2 от OpenAI. Многомодальная генерация с высшим качеством."},
                 {"id": "qwen/image-2", "name": "Qwen Image 2", "cost": 3, "description": "Qwen Image 2 — генерация изображений от Alibaba. Аспекты: 1:1, 9:16, 16:9."},
                 {"id": "bytedance/seedream-5-lite", "name": "Seedream 5.0", "cost": 3, "description": "Seedream 5.0 Lite от ByteDance. Яркие, сочные цвета и отличная стилизация."},
+                {"id": "google/gemini-3.1-flash-image-preview", "name": "Nano Banana 2", "cost": 10, "description": "Наша топовая эксклюзивная модель! Создает и редактирует изображения с невероятной магией."},
                 {"id": "topaz/image-upscale", "name": "Топаз Апскейлер", "cost": 5, "description": "Топаз Апскейлер — улучшение и увеличение изображений. Аспекты: 1:1, 9:16, 16:9."},
                 {"id": "x-ai/grok-imagine-image", "name": "Грок Image", "cost": 4, "description": "Грок Image — генерация изображений от xAI (Илон Маск). Аспекты: 1:1, 9:16, 16:9."},
                 {"id": "black-forest-labs/flux.2-pro", "name": "FLUX 2 PRO", "cost": 4, "description": "FLUX 2 PRO — лучшая модель для фотореализма. Идеально рисует лица и пальцы."},
@@ -73,7 +74,6 @@ MODEL_CATALOG = {
     "gen_nano_banana": {
         "nano_banana": {
             "models": [
-                {"id": "google/gemini-3.1-flash-image-preview", "name": "Nano Banana 2", "cost": 10, "description": "Наша топовая эксклюзивная модель! Создает и редактирует изображения с невероятной магией."},
                 {"id": "google/gemini-3-pro-image-preview", "name": "Nano Banana Pro", "cost": 8, "description": "Профессиональная генерация артов и фотореализма высшего качества."},
                 {"id": "google/gemini-2.5-flash-image", "name": "Nano Banana", "cost": 3, "description": "Быстрая, креативная и недорогая генерация изображений для повседневных задач."},
             ]
