@@ -335,6 +335,7 @@ async def set_image_aspect_ratio(callback: CallbackQuery, state: FSMContext):
     
     # Для новых image-моделей с Polza AI — сразу в режим ввода промпта
     # (стили работали через --ar суффикс, но Polza AI принимает aspect_ratio в payload)
+    await state.update_data(size_prompt="", style_prompt="", style="Без стиля")
     await state.set_state(GenState.waiting_for_input)
     await callback.message.answer(
         f"✅ Выбрана: <b>{name}</b>\n"
@@ -350,7 +351,7 @@ async def set_image_aspect_ratio(callback: CallbackQuery, state: FSMContext):
 async def set_video_resolution(callback: CallbackQuery, state: FSMContext):
     """Выбор разрешения видео."""
     resolution = callback.data.split(":", 1)[1]
-    await state.update_data(video_resolution=resolution)
+    await state.update_data(video_resolution=resolution, size_prompt="", style_prompt="", style="Без стиля")
     
     await callback.message.edit_text(
         f"✅ Разрешение: <b>{resolution}</b>\n\nВыберите <b>длительность</b> видео:",

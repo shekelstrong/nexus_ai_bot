@@ -386,11 +386,13 @@ async def _process_single_message(message: Message, state: FSMContext, session: 
         image_aspect_ratio = data.get("image_aspect_ratio", "1:1")
         
         final_prompt = prompt
-        if style_prompt:
-            final_prompt += style_prompt
-        if size_prompt:
-            final_prompt += size_prompt
-
+        # Legacy size/style — только для старых моделей, для Polza AI не дописываем
+        if not model_id.startswith(("yandex/", "openai/", "qwen/", "bytedance/", "google/", "topaz/", "x-ai/", "black-forest-labs/")):
+            if style_prompt:
+                final_prompt += style_prompt
+            if size_prompt:
+                final_prompt += size_prompt
+        
         await run_image_generation(message, session, final_prompt, reference_images, state, aspect_ratio=image_aspect_ratio)
         return
 
