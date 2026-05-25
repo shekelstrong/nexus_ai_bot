@@ -273,7 +273,7 @@ async def generate_media_image(
         logger.error(f"Polza Media Image: нет ID для поллинга. Ответ: {str(result)[:200]}")
         return None
 
-    poll_result = await poll_media(media_id, poll_seconds=5, max_wait_seconds=300)
+    poll_result = await poll_media(media_id, poll_seconds=5, max_wait_seconds=600)
     if not poll_result:
         return None
 
