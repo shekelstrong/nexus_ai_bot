@@ -10,6 +10,7 @@ services:
       - redis
     volumes:
       - ./logs:/app/logs
+      - ./nexus.db:/app/nexus.db
 
   postgres:
     image: postgres:15-alpine
