@@ -389,9 +389,23 @@ async def generate_video(
 
     logger.info(f"Polza Video: model={model}, image={bool(image_url)}, params={list(payload.keys())}")
 
-    # Отправляем синхронно (async polling не работает в Polza для статуса)
-    result = await submit_media(model, payload, async_mode=False)
-    if not result:
+    # Отправляем синхронно с большим таймаутом (видео может генерироваться 5-15 мин)
+    timeout = aiohttp.ClientTimeout(total=900, sock_connect=120, sock_read=900)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(POLZA_MEDIA_URL, headers=_headers(), json={
+                "model": model,
+                "input": payload,
+                "async": False,
+            }) as resp:
+                if resp.status not in (200, 201):
+                    err = await resp.text()
+                    logger.error(f"Polza Video Error {resp.status}: {err[:300]}")
+                    return None
+                result = await resp.json()
+                logger.info(f"Polza Video response keys: {list(result.keys()) if isinstance(result, dict) else 'not-dict'}")
+    except Exception as e:
+        logger.error(f"Polza Video exception: {e}")
         return None
 
     # Получаем URL напрямую из синхронного ответа
@@ -401,7 +415,6 @@ async def generate_video(
         return url
 
     logger.error(f"Polza Video: нет URL в ответе. Ключи: {list(result.keys())}")
-    return None
     return None
 
 
