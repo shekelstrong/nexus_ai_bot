@@ -257,28 +257,19 @@ async def generate_media_image(
 
     logger.info(f"Polza Media Image: model={model}, aspect={aspect_ratio}, refs={len(reference_images or [])}")
 
-    result = await submit_media(model, payload, async_mode=True)
+    # Для изображений используем sync режим (Polza возвращает быстрый синхронный ответ для картинок)
+    result = await submit_media(model, payload, async_mode=False)
     if not result:
         return None
 
-    # быстрый синхронный ответ
+    # Получаем URL напрямую из ответа
     url = extract_media_url(result)
     if url:
-        logger.info(f"Polza Media Image: быстрый URL")
+        logger.info(f"Polza Media Image: URL получен")
         return url
 
-    # ПОллинг
-    media_id = result.get("id") or result.get("media_id") or result.get("request_id")
-    if not media_id:
-        logger.error(f"Polza Media Image: нет ID для поллинга. Ответ: {str(result)[:200]}")
-        return None
-
-    poll_result = await poll_media(media_id, poll_seconds=5, max_wait_seconds=600)
-    if not poll_result:
-        return None
-
-    url = extract_media_url(poll_result)
-    return url
+    logger.error(f"Polza Media Image: нет URL в ответе. Ключи: {list(result.keys())}")
+    return None
 
 
 # =====================================================================
