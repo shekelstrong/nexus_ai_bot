@@ -89,6 +89,17 @@ def video_multi_shots_menu() -> InlineKeyboardMarkup:
     ])
 
 
+def video_aspect_ratio_menu() -> InlineKeyboardMarkup:
+    """Выбор соотношения сторон видео."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="9:16 (вертикальное / TikTok)", callback_data="var:9:16", style="primary"),
+            InlineKeyboardButton(text="16:9 (горизонтальное / YouTube)", callback_data="var:16:9", style="primary"),
+        ],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_menu", style="success")]
+    ])
+
+
 # ---- LEGACY (остаются для совместимости) ----
 
 def video_category_menu() -> InlineKeyboardMarkup:

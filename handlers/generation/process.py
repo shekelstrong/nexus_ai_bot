@@ -404,8 +404,7 @@ async def _process_single_message(message: Message, state: FSMContext, session: 
         extra_params["resolution"] = data.get("video_resolution", "720p")
         extra_params["duration"] = f"{data.get('video_duration', '5')}s"
         extra_params["multi_shots"] = data.get("video_multi_shots", False)
-        # Legacy fallback
-        extra_params["aspect_ratio"] = data.get("video_ratio", "16:9")
+        extra_params["aspect_ratio"] = data.get("video_aspect_ratio", "16:9")
 
     await run_simple_generation(message, user, session, model_info, category, extra_params=extra_params)
 

@@ -10,7 +10,7 @@ from keyboards.inline import (
     nano_banana_menu, video_category_menu, text_models_menu, prompt_menu,
     video_prompt_duration_menu, video_format_menu, video_duration_menu,
     post_video_gen_kb, image_aspect_ratio_menu, video_resolution_menu,
-    video_multi_shots_menu
+    video_multi_shots_menu, video_aspect_ratio_menu
 )
 from database.models import User
 from model_config import MODEL_CATALOG
@@ -354,9 +354,9 @@ async def set_video_resolution(callback: CallbackQuery, state: FSMContext):
     await state.update_data(video_resolution=resolution, size_prompt="", style_prompt="", style="Без стиля")
     
     await callback.message.edit_text(
-        f"✅ Разрешение: <b>{resolution}</b>\n\nВыберите <b>длительность</b> видео:",
+        f"✅ Разрешение: <b>{resolution}</b>\n\nВыберите <b>формат</b> видео:",
         parse_mode="HTML",
-        reply_markup=video_duration_menu()
+        reply_markup=video_aspect_ratio_menu()
     )
     await callback.answer()
 
@@ -387,16 +387,31 @@ async def set_video_multi_shots(callback: CallbackQuery, state: FSMContext):
     desc = data.get("current_model_desc", "")
     resolution = data.get("video_resolution", "720p")
     duration = data.get("video_duration", "5")
+    ratio = data.get("video_aspect_ratio", "16:9")
     
     desc_text = f"\nℹ️ <i>{desc}</i>\n" if desc else ""
     
     await state.set_state(GenState.waiting_for_input)
     await callback.message.edit_text(
         f"✅ Выбрана: <b>{name}</b>{desc_text}\n"
-        f"📹 <b>Параметры:</b> {resolution}, {duration} сек, мульти-шоты: {'да' if multi_shots else 'нет'}\n\n"
+        f"📹 <b>Параметры:</b> {resolution}, {ratio}, {duration} сек, мульти-шоты: {'да' if multi_shots else 'нет'}\n\n"
         f"✍️ Напишите промпт (и пришлите фото для img2vid, если нужно):",
         parse_mode="HTML",
         reply_markup=back_to_menu_kb()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("var:"))
+async def set_video_aspect_ratio(callback: CallbackQuery, state: FSMContext):
+    """Выбор соотношения сторон видео."""
+    ratio = callback.data.split(":", 1)[1]
+    await state.update_data(video_aspect_ratio=ratio)
+    
+    await callback.message.edit_text(
+        f"✅ Формат: <b>{ratio}</b>\n\nВыберите <b>длительность</b> видео:",
+        parse_mode="HTML",
+        reply_markup=video_duration_menu()
     )
     await callback.answer()
 
