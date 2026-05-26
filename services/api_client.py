@@ -7,6 +7,7 @@ from config import settings
 from utils.logger import logger
 
 from services.generators.standard_text import StandardTextGenerator
+from services.providers.openrouter import OpenRouterProvider
 from services.polza_ai import (
     generate_media_image,
     generate_image as polza_generate_image,
@@ -47,6 +48,11 @@ class APIClient:
             size_map = {"1:1": "1024x1024", "9:16": "1024x1792", "16:9": "1792x1024"}
             openai_size = size_map.get(aspect_ratio) or size
             return await polza_generate_image(model, prompt, size=openai_size)
+
+        # Google Gemini image модели (Nano Banana) — через OpenRouter, т.к. Polza требует баланс
+        if "google/gemini" in model_lower:
+            provider = OpenRouterProvider()
+            return await provider.generate_image(model, prompt)
 
         # ВСЕ остальные image-модели через Polza AI Media API
         return await generate_media_image(
