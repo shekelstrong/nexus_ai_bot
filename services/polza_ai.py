@@ -389,51 +389,19 @@ async def generate_video(
 
     logger.info(f"Polza Video: model={model}, image={bool(image_url)}, params={list(payload.keys())}")
 
-    # Отправляем асинхронно
-    result = await submit_media(model, payload, async_mode=True)
+    # Отправляем синхронно (async polling не работает в Polza для статуса)
+    result = await submit_media(model, payload, async_mode=False)
     if not result:
         return None
 
-    # быстрый URL
+    # Получаем URL напрямую из синхронного ответа
     url = extract_media_url(result)
     if url:
-        logger.info(f"Polza Video: быстрый URL получен")
+        logger.info(f"Polza Video: URL получен")
         return url
 
-    # ПОллинг
-    media_id = result.get("id") or result.get("media_id") or result.get("request_id")
-    if not media_id:
-        logger.error(f"Polza Video: нет ID для поллинга. Ответ: {str(result)[:200]}")
-        return None
-
-    _save_active_poll(media_id, context or {})
-
-    poll_result = await poll_media(media_id, poll_seconds=poll_seconds, max_wait_seconds=max_wait_seconds)
-    if not poll_result:
-        _clear_active_poll(media_id)
-        return None
-
-    url = extract_media_url(poll_result)
-    if url:
-        _clear_active_poll(media_id)
-        return url
-
-    # Fallback: response_url
-    response_url = poll_result.get("response_url")
-    if response_url:
-        try:
-            timeout = aiohttp.ClientTimeout(total=60)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(response_url, headers=_headers()) as resp:
-                    if resp.status == 200:
-                        final = await resp.json()
-                        url = extract_media_url(final)
-                        if url:
-                            return url
-        except Exception as e:
-            logger.warning(f"Polza Video response_url fetch: {e}")
-
-    logger.error(f"Polza Video: не удалось извлечь URL")
+    logger.error(f"Polza Video: нет URL в ответе. Ключи: {list(result.keys())}")
+    return None
     return None
 
 
