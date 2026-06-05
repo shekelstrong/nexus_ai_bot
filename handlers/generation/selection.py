@@ -71,12 +71,12 @@ STYLE_PROMPTS = {
 STYLES_LIST = list(STYLE_PROMPTS.keys())
 
 CATEGORY_IMAGES = {
-    "gen_nano_banana": "assets/nano_banana.jpg"
+    "gen_image": "assets/gpt_images.jpg",
 }
 
 FAMILY_IMAGES = {
     "seedream": "assets/seedream.jpg",
-    "gemini_image": "assets/gpt_images.jpg"
+    "gemini_image": "assets/gpt_images.jpg",
 }
 
 async def _send_menu(callback: CallbackQuery, text: str, kb: InlineKeyboardMarkup, img_path: str = None):
@@ -119,10 +119,7 @@ async def select_category_callback(callback: CallbackQuery, state: FSMContext):
         category = callback.data.split(":")[1]
         img_path = CATEGORY_IMAGES.get(category)
 
-        if category == "gen_nano_banana":
-            await _send_menu(callback, "<b>Nano Banana</b>\nВыберите модель:", nano_banana_menu(), img_path)
-
-        elif category == "gen_text":
+        if category == "gen_text":
             await _send_menu(callback, "<b>Текстовые модели</b>\nВыберите бренд:", text_models_menu(), img_path)
 
         elif category == "gen_video":
@@ -487,7 +484,7 @@ async def regen_model_handler(callback: CallbackQuery, state: FSMContext, sessio
             parse_mode="HTML",
             reply_markup=video_resolution_menu()
         )
-    elif category in ["gen_image", "gen_nano_banana"]:
+    elif category == "gen_image":
         await state.set_state(GenState.waiting_for_input)
         prompt_hint = ""
         if preserved_prompt:
@@ -557,16 +554,6 @@ async def set_model_handler(callback: CallbackQuery, state: FSMContext, session:
             parse_mode="HTML",
             reply_markup=video_resolution_menu()
         )
-        await callback.answer()
-        return
-
-    # ---- NANO BANANA (оставляем старый flow) ----
-    if category == "gen_nano_banana":
-        # Сразу в режим ввода без выбора размеров/стилей
-        await state.update_data(ratio="1:1", size_prompt="", style_prompt="", style="Без стиля")
-        text = f"✅ Выбрана: <b>{name}</b>{desc_text}\n\nОтправьте промпт (и фото-референс при необходимости):"
-        await state.set_state(GenState.waiting_for_input)
-        await callback.message.answer(text, reply_markup=back_to_menu_kb(), parse_mode="HTML")
         await callback.answer()
         return
 

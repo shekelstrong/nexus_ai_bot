@@ -386,8 +386,16 @@ async def _process_single_message(message: Message, state: FSMContext, session: 
         image_aspect_ratio = data.get("image_aspect_ratio", "1:1")
         
         final_prompt = prompt
-        # Legacy size/style — только для старых моделей, для Polza AI не дописываем
-        if not model_id.startswith(("yandex/", "openai/", "qwen/", "bytedance/", "google/", "topaz/", "x-ai/", "black-forest-labs/")):
+        # Legacy size/style — ТОЛЬКО для старых моделей (не OpenRouter/Polza)
+        # OpenRouter-модели получают aspect_ratio через API параметр
+        openrouter_models = {
+            "openai/gpt-5.4-image-2",
+            "google/gemini-3.1-flash-image-preview",
+            "google/gemini-3-pro-image-preview",
+            "google/gemini-2.5-flash-image",
+            "sourceful/riverflow-v2.5-pro:free",
+        }
+        if model_id not in openrouter_models:
             if style_prompt:
                 final_prompt += style_prompt
             if size_prompt:

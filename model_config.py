@@ -66,16 +66,12 @@ MODEL_CATALOG = {
                 {"id": "x-ai/grok-imagine-image", "name": "Грок Image", "cost": 4, "description": "Грок Image — генерация изображений от xAI (Илон Маск). Аспекты: 1:1, 9:16, 16:9."},
                 {"id": "black-forest-labs/flux.2-pro", "name": "FLUX 2 PRO", "cost": 4, "description": "FLUX 2 PRO — лучшая модель для фотореализма. Идеально рисует лица и пальцы."},
                 {"id": "black-forest-labs/flux.2-flex", "name": "FLUX-2 FLEX", "cost": 2, "description": "FLUX-2 FLEX — сбалансированная версия Flux. Рисует быстро и качественно."},
-            ]
-        },
-    },
-
-    "gen_nano_banana": {
-        "nano_banana": {
-            "models": [
-                {"id": "google/gemini-3.1-flash-image-preview", "name": "Nano Banana 2", "cost": 10, "description": "Наша топовая эксклюзивная модель! Создает и редактирует изображения с невероятной магией."},
-                {"id": "google/gemini-3-pro-image-preview", "name": "Nano Banana Pro", "cost": 8, "description": "Профессиональная генерация артов и фотореализма высшего качества."},
-                {"id": "google/gemini-2.5-flash-image", "name": "Nano Banana", "cost": 3, "description": "Быстрая, креативная и недорогая генерация изображений для повседневных задач."},
+                # Riverflow — через OpenRouter с aspect_ratio
+                {"id": "sourceful/riverflow-v2.5-pro:free", "name": "Riverflow V2.5 Pro", "cost": 2, "description": "Riverflow V2.5 Pro — генерация изображений через OpenRouter. Аспекты: 1:1, 9:16, 16:9."},
+                # Nano Banana — через OpenRouter с aspect_ratio
+                {"id": "google/gemini-3.1-flash-image-preview", "name": "Nano Banana 2", "cost": 10, "description": "Наша топовая эксклюзивная модель! Создает и редактирует изображения с невероятной магией. Аспекты: 1:1, 9:16, 16:9."},
+                {"id": "google/gemini-3-pro-image-preview", "name": "Nano Banana Pro", "cost": 8, "description": "Профессиональная генерация артов и фотореализма высшего качества. Аспекты: 1:1, 9:16, 16:9."},
+                {"id": "google/gemini-2.5-flash-image", "name": "Nano Banana", "cost": 3, "description": "Быстрая, креативная и недорогая генерация изображений для повседневных задач. Аспекты: 1:1, 9:16, 16:9."},
             ]
         },
     },

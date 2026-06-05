@@ -7,6 +7,7 @@ from config import settings
 from utils.logger import logger
 
 from services.generators.standard_text import StandardTextGenerator
+from services import openrouter
 from services.polza_ai import (
     generate_media_image,
     generate_image as polza_generate_image,
@@ -39,16 +40,25 @@ class APIClient:
         if reference_images is None:
             reference_images = []
 
-        model_lower = model.lower()
-
-        # openai/gpt-5.4-image-2 идёт через Polza Images API (OpenAI-style)
-        if "gpt-5.4-image-2" in model_lower or "gpt-image-2" in model_lower:
-            # map aspect_ratio -> openai-style size
+        # --- МОДЕЛИ ЧЕРЕЗ OPENROUTER (Nano Banana + GPT Images + Riverflow) ---
+        openrouter_image_models = {
+            "openai/gpt-5.4-image-2",
+            "google/gemini-3.1-flash-image-preview",
+            "google/gemini-3-pro-image-preview",
+            "google/gemini-2.5-flash-image",
+            "sourceful/riverflow-v2.5-pro:free",
+        }
+        if model in openrouter_image_models:
             size_map = {"1:1": "1024x1024", "9:16": "1024x1792", "16:9": "1792x1024"}
-            openai_size = size_map.get(aspect_ratio) or size
-            return await polza_generate_image(model, prompt, size=openai_size)
+            or_size = size_map.get(aspect_ratio or "1:1", "1024x1024")
+            return await openrouter.generate_image(
+                model=model,
+                prompt=prompt,
+                size=or_size,
+                reference_images=reference_images,
+            )
 
-        # ВСЕ остальные image-модели через Polza AI Media API (включая google/gemini Nano Banana)
+        # --- ОСТАЛЬНЫЕ image-модели через Polza AI Media API ---
         return await generate_media_image(
             model=model,
             prompt=prompt,
